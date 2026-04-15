@@ -5,6 +5,8 @@
 - Project brief reviewed and translated into a rubric-aligned plan
 - Proposal reviewed to confirm the target task and data-join strategy
 - Exploratory data analysis implemented in `src/eda.py`
+- End-to-end modeling pipeline implemented in `src/modeling.py`
+- Artifact-based evaluation pipeline implemented in `src/evaluate_artifacts.py`
 - EDA summaries, tables, and plots generated locally under `outputs/eda/`
 
 ## Main EDA Findings
@@ -41,4 +43,4 @@ Evaluation notes:
 
 ## Next Engineering Step
 
-Build a clean preprocessing and modeling pipeline that reproduces the local experiment results from source code inside `src/`.
+Extend the tracked pipeline with final report assets, presentation material, and any final feature-engineering refinements needed before submission.

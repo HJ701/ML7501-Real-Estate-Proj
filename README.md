@@ -12,14 +12,14 @@ This project was built for `ML 7501 - Applied Machine Learning`. The core superv
 4. compare multiple machine learning models
 5. evaluate performance and explain the strongest results
 
-## Current Repository Status
+## Repository Status
 
-The current tracked source code covers the EDA stage in [src/eda.py](src/eda.py). Local modeling and evaluation experiment artifacts already exist and are summarized here so the repository reflects the project progress so far.
+The repository now includes the full source pipeline:
 
-Useful repo files:
-
-- [src/eda.py](src/eda.py): reproducible exploratory data analysis pipeline
-- [reports/project_status.md](reports/project_status.md): concise progress and result summary
+- [src/eda.py](src/eda.py): exploratory data analysis
+- [src/modeling.py](src/modeling.py): master-table construction, preprocessing, model training, tuning, artifact export
+- [src/evaluate_artifacts.py](src/evaluate_artifacts.py): rigorous post-training evaluation from saved artifacts
+- [reports/project_status.md](reports/project_status.md): concise project summary
 - [data/README.md](data/README.md): local raw-data notes
 
 ## Data Sources
@@ -55,7 +55,7 @@ Transactions and rent records have strong overlap at `area_id` and `area_name_en
 
 ## Model Performance Snapshot
 
-These metrics come from the strongest local experiment artifacts produced so far.
+These metrics come from the strongest local experiment artifacts produced by the tracked source pipeline.
 
 ### Best Regression Result
 
@@ -113,7 +113,9 @@ ML7501-Real-Estate-Proj/
 │   └── project_status.md
 ├── src/
 │   ├── __init__.py
-│   └── eda.py
+│   ├── eda.py
+│   ├── modeling.py
+│   └── evaluate_artifacts.py
 └── outputs/                  # local generated artifacts, not versioned
 ```
 
@@ -126,13 +128,59 @@ python3 -m pip install -r requirements.txt
 ## Run The Current EDA
 
 ```bash
-python3 src/eda.py
+python3 -m src.eda
 ```
 
 This generates summary tables and plots under `outputs/eda/`.
+
+## Run The End-to-End Modeling Pipeline
+
+Train the full regression and classification pipeline and save artifacts:
+
+```bash
+python3 -m src.modeling --task both --output-dir outputs/modeling/latest
+```
+
+Optional GPU-backed run when `xgboost` is installed:
+
+```bash
+python3 -m src.modeling --task both --use-gpu --output-dir outputs/modeling/gpu_run
+```
+
+Important options:
+
+- `--train-frac 0.70`
+- `--val-frac 0.15`
+- `--classification-quantile 0.75`
+- `--tune-iterations 8`
+- `--cv-splits 4`
+- `--n-jobs 1`
+
+## Run Artifact Evaluation
+
+Evaluate a saved artifact directory and generate enriched metrics, subgroup analysis, and summary plots:
+
+```bash
+python3 -m src.evaluate_artifacts \
+  --artifact-dir outputs/modeling/gpu_run \
+  --output-dir outputs/evaluation/gpu_run \
+  --bootstrap-iterations 250
+```
+
+## Expected Outputs
+
+After running the full pipeline, the main local outputs are:
+
+- `outputs/modeling/<run_name>/tables/`
+- `outputs/modeling/<run_name>/plots/`
+- `outputs/modeling/<run_name>/models/`
+- `outputs/modeling/<run_name>/summaries/`
+- `outputs/evaluation/<run_name>/tables/`
+- `outputs/evaluation/<run_name>/plots/`
+- `outputs/evaluation/<run_name>/summaries/`
 
 ## Notes
 
 - Raw data are intentionally excluded from git.
 - Large generated experiment artifacts remain local under `outputs/`.
-- The next source-code milestone is a clean preprocessing and modeling pipeline that reproduces the current local experiment results directly from `src/`.
+- The repository is structured so the full end-to-end source code is tracked, while heavyweight local outputs stay untracked.
