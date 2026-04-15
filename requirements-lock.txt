@@ -1,0 +1,8 @@
+joblib==1.2.0
+matplotlib==3.7.1
+numpy==1.26.0
+pandas==2.3.3
+scikit-learn==1.6.1
+seaborn==0.12.2
+# Optional for GPU-backed experiments when available
+# xgboost==2.1.4

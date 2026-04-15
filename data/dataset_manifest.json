@@ -1,0 +1,72 @@
+{
+  "datasets": [
+    {
+      "filename": "Real-estate_Transactions_2026-03-27.csv",
+      "role": "primary_supervised_table",
+      "required": true,
+      "source_url": "https://data.dubai/en/e/dataset-details-embed/35681/468586",
+      "expected_rows": 5000,
+      "expected_columns": 47,
+      "sha256": "988676042e33508001c9e390d2bcfcb7e9e1bd0baa9755671de24695c279e970",
+      "required_columns": [
+        "actual_worth",
+        "instance_date",
+        "area_id",
+        "area_name_en",
+        "property_type_en",
+        "property_sub_type_en",
+        "procedure_area",
+        "meter_sale_price",
+        "reg_type_en",
+        "procedure_name_en"
+      ]
+    },
+    {
+      "filename": "rent_contracts.csv",
+      "role": "area_time_enrichment_table",
+      "required": true,
+      "source_url": "https://data.dubai/e/dataset-details-embed/35681/470061",
+      "expected_rows": 5000,
+      "expected_columns": 41,
+      "sha256": "61311940f56e2d47804d939fed10bd4a11ec1e49562ad546c6ef619509a6d0cb",
+      "required_columns": [
+        "contract_id",
+        "contract_start_date",
+        "contract_end_date",
+        "annual_amount",
+        "actual_area",
+        "area_id",
+        "area_name_en",
+        "ejari_property_type_en",
+        "tenant_type_en",
+        "property_usage_en"
+      ]
+    },
+    {
+      "filename": "FCSA,DF_HOT_TYPE,4.3.0+...A.....csv",
+      "role": "annual_macro_context_table",
+      "required": true,
+      "source_url": "https://uaestat.fcsc.gov.ae/vis?fc=FCSC%20-%20Statistical%20Hierarchy&fs[0]=FCSC%20-%20Statistical%20Hierarchy%2C0%7CTourism%23TOU_TS%23&lc=en&pg=0&snb=3&utm_source=chatgpt.com&df[ds]=FCSC-RDS&df[id]=DF_HOT_TYPE&df[ag]=FCSA&df[vs]=4.3.0&dq=...A....&pd=2016%2C&to[TIME_PERIOD]=false",
+      "expected_rows": 108,
+      "expected_columns": 32,
+      "sha256": "c485db24400c81a4daeabfd86fd96d27001323f853d8dfa8a8f6abe80f2f0a3f",
+      "required_columns": [
+        "TIME_PERIOD",
+        "OBS_VALUE",
+        "H_TYPE",
+        "Hotel Type",
+        "H_INDICATOR",
+        "Hotels Indicator",
+        "REF_AREA",
+        "Reference area"
+      ]
+    },
+    {
+      "filename": "rent_contracts_page1.json",
+      "role": "auxiliary_raw_reference",
+      "required": false,
+      "source_url": "Local auxiliary JSON snapshot retained for reference.",
+      "sha256": "244615ab41bab9abf1f264f67c7cdf47d523d95e8dd25c1009e9f8a9bccb3514"
+    }
+  ]
+}

@@ -20,6 +20,7 @@ The repository now includes the full source pipeline:
 - [src/eda.py](src/eda.py): exploratory data analysis
 - [src/modeling.py](src/modeling.py): master-table construction, preprocessing, model training, tuning, artifact export
 - [src/evaluate_artifacts.py](src/evaluate_artifacts.py): rigorous post-training evaluation from saved artifacts
+- [src/validate_data.py](src/validate_data.py): raw-data manifest and schema validation
 - [reports/project_status.md](reports/project_status.md): concise project summary
 - [data/README.md](data/README.md): local raw-data notes
 - [reports/appendix_modeling_detail.md](reports/appendix_modeling_detail.md): exact search spaces, ablation table, and raw-vs-log target comparison
@@ -33,6 +34,8 @@ The project uses three public-source datasets stored locally under `data/raw/`:
 - UAE hotel statistics used as annual macro context
 
 The transaction table is the supervised master table. The rent table is used for area-time enrichment. The hotel table is only suitable as annual macro context, not neighborhood-level joining.
+
+Exact source URLs, expected filenames, expected shapes, required columns, and the local reproduction hashes are tracked in [data/dataset_manifest.json](data/dataset_manifest.json).
 
 ## Exploratory Data Analysis
 
@@ -112,9 +115,11 @@ The key result from that appendix is that `log1p(actual_worth)` is clearly the c
 ML7501-Real-Estate-Proj/
 ├── README.md
 ├── requirements.txt
+├── requirements-lock.txt
 ├── .gitignore
 ├── data/
 │   ├── README.md
+│   ├── dataset_manifest.json
 │   └── raw/                  # local raw files, not versioned
 ├── docs/
 │   ├── README.md
@@ -128,8 +133,9 @@ ML7501-Real-Estate-Proj/
 │   ├── __init__.py
 │   ├── appendix_analysis.py
 │   ├── eda.py
+│   ├── evaluate_artifacts.py
 │   ├── modeling.py
-│   └── evaluate_artifacts.py
+│   └── validate_data.py
 └── outputs/                  # local generated artifacts, not versioned
 ```
 
@@ -137,6 +143,28 @@ ML7501-Real-Estate-Proj/
 
 ```bash
 python3 -m pip install -r requirements.txt
+```
+
+For the exact package versions used in the tracked local reproduction snapshot:
+
+```bash
+python3 -m pip install -r requirements-lock.txt
+```
+
+## Reproducibility Checklist
+
+1. Download the raw data files from the source URLs in [data/dataset_manifest.json](data/dataset_manifest.json).
+2. Place them in `data/raw/` using the exact filenames listed in the manifest.
+3. Validate the local files before running the pipeline:
+
+```bash
+python3 -m src.validate_data
+```
+
+For exact hash matching against the tracked local snapshot:
+
+```bash
+python3 -m src.validate_data --strict-hash
 ```
 
 ## Run The Current EDA
