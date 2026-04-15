@@ -8,8 +8,8 @@ from pathlib import Path
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = BASE_DIR / "data" / "raw"
-MANIFEST_PATH = BASE_DIR / "data" / "dataset_manifest.json"
+DEFAULT_DATA_DIR = BASE_DIR / "data" / "raw"
+DEFAULT_MANIFEST_PATH = BASE_DIR / "data" / "dataset_manifest.json"
 
 
 def sha256sum(path: Path) -> str:
@@ -20,13 +20,13 @@ def sha256sum(path: Path) -> str:
     return digest.hexdigest()
 
 
-def load_manifest() -> dict[str, object]:
-    return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+def load_manifest(path: Path) -> dict[str, object]:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def validate_dataset(entry: dict[str, object], strict_hash: bool) -> dict[str, object]:
+def validate_dataset(entry: dict[str, object], data_dir: Path, strict_hash: bool) -> dict[str, object]:
     filename = entry["filename"]
-    path = DATA_DIR / filename
+    path = data_dir / filename
     result: dict[str, object] = {
         "filename": filename,
         "required": entry.get("required", True),
@@ -71,6 +71,18 @@ def validate_dataset(entry: dict[str, object], strict_hash: bool) -> dict[str, o
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate local raw data files against the tracked dataset manifest.")
     parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=DEFAULT_DATA_DIR,
+        help="Directory containing the files to validate.",
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Manifest JSON to validate against. Defaults to a manifest inferred from the selected data directory.",
+    )
+    parser.add_argument(
         "--strict-hash",
         action="store_true",
         help="Fail when file hashes differ from the tracked local reproduction snapshot.",
@@ -78,10 +90,18 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def infer_manifest_path(data_dir: Path) -> Path:
+    if data_dir.resolve() == (BASE_DIR / "data" / "sample").resolve():
+        return BASE_DIR / "data" / "sample_manifest.json"
+    return DEFAULT_MANIFEST_PATH
+
+
 def main() -> None:
     args = parse_args()
-    manifest = load_manifest()
-    rows = [validate_dataset(entry, strict_hash=args.strict_hash) for entry in manifest["datasets"]]
+    data_dir = args.data_dir.resolve()
+    manifest_path = args.manifest.resolve() if args.manifest else infer_manifest_path(data_dir)
+    manifest = load_manifest(manifest_path)
+    rows = [validate_dataset(entry, data_dir=data_dir, strict_hash=args.strict_hash) for entry in manifest["datasets"]]
     status_df = pd.DataFrame(rows)
     print(status_df[["filename", "required", "exists", "status"]].to_string(index=False))
     for row in rows:

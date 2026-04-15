@@ -27,6 +27,7 @@ from src.modeling import (
 
 DEFAULT_OUTPUT_DIR = BASE_DIR / "outputs" / "reporting" / "appendix"
 DEFAULT_MODELING_ARTIFACT_DIR = BASE_DIR / "outputs" / "modeling" / "gpu_run"
+DEFAULT_DATA_DIR = BASE_DIR / "data" / "raw"
 
 
 def ensure_output_dirs(output_dir: Path) -> dict[str, Path]:
@@ -104,9 +105,10 @@ def fit_regression_variant(
 
 def regression_ablation_table(
     artifact_dir: Path,
+    data_dir: Path,
     n_jobs: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    master = build_master_table()
+    master = build_master_table(data_dir=data_dir)
     train_df, val_df, test_df = temporal_split(master, train_frac=0.70, val_frac=0.15)
 
     X_train = select_model_features(train_df)
@@ -220,6 +222,12 @@ def parse_args() -> argparse.Namespace:
         help="Modeling artifact directory used to recover tuned parameters.",
     )
     parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=DEFAULT_DATA_DIR,
+        help="Directory containing the input data files expected by the modeling pipeline.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=DEFAULT_OUTPUT_DIR,
@@ -250,6 +258,7 @@ def main() -> None:
     )
     ablation_df, target_compare_df = regression_ablation_table(
         artifact_dir=args.artifact_dir.resolve(),
+        data_dir=args.data_dir.resolve(),
         n_jobs=args.n_jobs,
     )
 

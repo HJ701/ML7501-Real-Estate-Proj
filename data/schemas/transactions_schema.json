@@ -1,0 +1,241 @@
+{
+  "row_count": 5000,
+  "column_count": 47,
+  "columns": [
+    {
+      "name": "procedure_name_en",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "project_name_en",
+      "dtype": "object",
+      "missing_pct": 26.94
+    },
+    {
+      "name": "building_name_ar",
+      "dtype": "object",
+      "missing_pct": 28.76
+    },
+    {
+      "name": "actual_worth",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "property_usage_en",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "reg_type_id",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "procedure_id",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "property_sub_type_id",
+      "dtype": "float64",
+      "missing_pct": 19.72
+    },
+    {
+      "name": "procedure_area",
+      "dtype": "float64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "procedure_name_ar",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "instance_date",
+      "dtype": "datetime64[ns]",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "project_name_ar",
+      "dtype": "object",
+      "missing_pct": 26.94
+    },
+    {
+      "name": "building_name_en",
+      "dtype": "object",
+      "missing_pct": 28.76
+    },
+    {
+      "name": "property_usage_ar",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "area_id",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "property_type_id",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "nearest_metro_en",
+      "dtype": "object",
+      "missing_pct": 29.94
+    },
+    {
+      "name": "has_parking",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "meter_sale_price",
+      "dtype": "float64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "trans_group_ar",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "nearest_mall_en",
+      "dtype": "object",
+      "missing_pct": 30.7
+    },
+    {
+      "name": "no_of_parties_role_3",
+      "dtype": "float64",
+      "missing_pct": 0.08
+    },
+    {
+      "name": "nearest_metro_ar",
+      "dtype": "object",
+      "missing_pct": 29.94
+    },
+    {
+      "name": "no_of_parties_role_2",
+      "dtype": "float64",
+      "missing_pct": 0.08
+    },
+    {
+      "name": "no_of_parties_role_1",
+      "dtype": "float64",
+      "missing_pct": 0.08
+    },
+    {
+      "name": "trans_group_en",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "nearest_mall_ar",
+      "dtype": "object",
+      "missing_pct": 30.7
+    },
+    {
+      "name": "transaction_id",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "rooms_ar",
+      "dtype": "object",
+      "missing_pct": 21.08
+    },
+    {
+      "name": "meter_rent_price",
+      "dtype": "float64",
+      "missing_pct": 97.82
+    },
+    {
+      "name": "property_type_en",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "master_project_en",
+      "dtype": "object",
+      "missing_pct": 13.24
+    },
+    {
+      "name": "nearest_landmark_en",
+      "dtype": "object",
+      "missing_pct": 19.66
+    },
+    {
+      "name": "rooms_en",
+      "dtype": "object",
+      "missing_pct": 21.08
+    },
+    {
+      "name": "area_name_en",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "property_type_ar",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "trans_group_id",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "load_timestamp",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "nearest_landmark_ar",
+      "dtype": "object",
+      "missing_pct": 19.66
+    },
+    {
+      "name": "area_name_ar",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "reg_type_en",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "property_sub_type_en",
+      "dtype": "object",
+      "missing_pct": 19.72
+    },
+    {
+      "name": "project_number",
+      "dtype": "float64",
+      "missing_pct": 26.94
+    },
+    {
+      "name": "rent_value",
+      "dtype": "float64",
+      "missing_pct": 97.82
+    },
+    {
+      "name": "reg_type_ar",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "property_sub_type_ar",
+      "dtype": "object",
+      "missing_pct": 19.72
+    },
+    {
+      "name": "master_project_ar",
+      "dtype": "object",
+      "missing_pct": 13.24
+    }
+  ]
+}

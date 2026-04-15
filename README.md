@@ -37,6 +37,8 @@ The transaction table is the supervised master table. The rent table is used for
 
 Exact source URLs, expected filenames, expected shapes, required columns, and the local reproduction hashes are tracked in [data/dataset_manifest.json](data/dataset_manifest.json).
 
+For lower-friction smoke testing, the repository also includes a tracked lightweight sample in [data/sample](data/sample/README.md) together with its own [data/sample_manifest.json](data/sample_manifest.json).
+
 ## Exploratory Data Analysis
 
 The EDA established the modeling direction and surfaced the main data risks:
@@ -120,6 +122,9 @@ ML7501-Real-Estate-Proj/
 ├── data/
 │   ├── README.md
 │   ├── dataset_manifest.json
+│   ├── sample_manifest.json
+│   ├── sample/               # tracked public sample for smoke runs
+│   ├── schemas/              # tracked schema snapshots
 │   └── raw/                  # local raw files, not versioned
 ├── docs/
 │   ├── README.md
@@ -167,6 +172,12 @@ For exact hash matching against the tracked local snapshot:
 python3 -m src.validate_data --strict-hash
 ```
 
+For the tracked sample instead of the full raw snapshot:
+
+```bash
+python3 -m src.validate_data --data-dir data/sample
+```
+
 ## Run The Current EDA
 
 ```bash
@@ -174,6 +185,12 @@ python3 -m src.eda
 ```
 
 This generates summary tables and plots under `outputs/eda/`.
+
+Run EDA on the tracked sample:
+
+```bash
+python3 -m src.eda --data-dir data/sample --output-dir outputs/eda_sample
+```
 
 ## Generate The Appendix Tables
 
@@ -204,6 +221,12 @@ Important options:
 - `--cv-splits 4`
 - `--n-jobs 1`
 
+Sample smoke run:
+
+```bash
+python3 -m src.modeling --data-dir data/sample --task regression --tune-iterations 1 --cv-splits 3 --output-dir outputs/modeling/sample_smoke
+```
+
 ## Run Artifact Evaluation
 
 Evaluate a saved artifact directory and generate enriched metrics, subgroup analysis, and summary plots:
@@ -213,6 +236,15 @@ python3 -m src.evaluate_artifacts \
   --artifact-dir outputs/modeling/gpu_run \
   --output-dir outputs/evaluation/gpu_run \
   --bootstrap-iterations 250
+```
+
+Evaluate the tracked sample smoke artifacts:
+
+```bash
+python3 -m src.evaluate_artifacts \
+  --artifact-dir outputs/modeling/sample_smoke \
+  --output-dir outputs/evaluation/sample_smoke \
+  --bootstrap-iterations 10
 ```
 
 ## Expected Outputs
@@ -230,5 +262,6 @@ After running the full pipeline, the main local outputs are:
 ## Notes
 
 - Raw data are intentionally excluded from git.
+- The repo includes a tracked public sample and tracked schema snapshots to reduce reproduction friction for instructors.
 - Large generated experiment artifacts remain local under `outputs/`.
 - The repository is structured so the full end-to-end source code is tracked, while heavyweight local outputs stay untracked.

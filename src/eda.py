@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import warnings
@@ -16,10 +17,8 @@ import seaborn as sns
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = BASE_DIR / "data" / "raw"
-OUTPUT_DIR = BASE_DIR / "outputs" / "eda"
-TABLE_DIR = OUTPUT_DIR / "tables"
-PLOT_DIR = OUTPUT_DIR / "plots"
+DEFAULT_DATA_DIR = BASE_DIR / "data" / "raw"
+DEFAULT_OUTPUT_DIR = BASE_DIR / "outputs" / "eda"
 
 
 @dataclass(frozen=True)
@@ -30,35 +29,39 @@ class DatasetConfig:
     target_column: str | None = None
 
 
-DATASETS = (
-    DatasetConfig(
-        name="transactions",
-        path=DATA_DIR / "Real-estate_Transactions_2026-03-27.csv",
-        date_columns=("instance_date", "load_timestamp"),
-        target_column="actual_worth",
-    ),
-    DatasetConfig(
-        name="rent_contracts",
-        path=DATA_DIR / "rent_contracts.csv",
-        date_columns=("contract_start_date", "contract_end_date", "load_timestamp"),
-        target_column="annual_amount",
-    ),
-    DatasetConfig(
-        name="hotel_stats",
-        path=DATA_DIR / "FCSA,DF_HOT_TYPE,4.3.0+...A.....csv",
-        date_columns=("TIME_PERIOD",),
-        target_column="OBS_VALUE",
-    ),
-)
+def make_dataset_configs(data_dir: Path) -> tuple[DatasetConfig, ...]:
+    return (
+        DatasetConfig(
+            name="transactions",
+            path=data_dir / "Real-estate_Transactions_2026-03-27.csv",
+            date_columns=("instance_date", "load_timestamp"),
+            target_column="actual_worth",
+        ),
+        DatasetConfig(
+            name="rent_contracts",
+            path=data_dir / "rent_contracts.csv",
+            date_columns=("contract_start_date", "contract_end_date", "load_timestamp"),
+            target_column="annual_amount",
+        ),
+        DatasetConfig(
+            name="hotel_stats",
+            path=data_dir / "FCSA,DF_HOT_TYPE,4.3.0+...A.....csv",
+            date_columns=("TIME_PERIOD",),
+            target_column="OBS_VALUE",
+        ),
+    )
 
 
 def slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
 
 
-def ensure_output_dirs() -> None:
-    TABLE_DIR.mkdir(parents=True, exist_ok=True)
-    PLOT_DIR.mkdir(parents=True, exist_ok=True)
+def ensure_output_dirs(output_dir: Path) -> tuple[Path, Path]:
+    table_dir = output_dir / "tables"
+    plot_dir = output_dir / "plots"
+    table_dir.mkdir(parents=True, exist_ok=True)
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    return table_dir, plot_dir
 
 
 def load_dataset(config: DatasetConfig) -> pd.DataFrame:
@@ -173,13 +176,13 @@ def save_dataframe(df: pd.DataFrame, path: Path) -> None:
     df.to_csv(path, index=False)
 
 
-def save_plot(fig: plt.Figure, filename: str) -> None:
+def save_plot(fig: plt.Figure, path: Path) -> None:
     fig.tight_layout()
-    fig.savefig(PLOT_DIR / filename, dpi=220, bbox_inches="tight")
+    fig.savefig(path, dpi=220, bbox_inches="tight")
     plt.close(fig)
 
 
-def plot_missingness(df: pd.DataFrame, dataset_name: str, top_n: int = 15) -> None:
+def plot_missingness(df: pd.DataFrame, dataset_name: str, plot_dir: Path, top_n: int = 15) -> None:
     missing = df.isna().mean().mul(100).sort_values(ascending=False).head(top_n)
     missing = missing[missing > 0]
     if missing.empty:
@@ -190,10 +193,10 @@ def plot_missingness(df: pd.DataFrame, dataset_name: str, top_n: int = 15) -> No
     ax.set_title(f"{dataset_name.replace('_', ' ').title()}: Top Missing Columns")
     ax.set_xlabel("Missing values (%)")
     ax.set_ylabel("")
-    save_plot(fig, f"{dataset_name}_missingness_top{top_n}.png")
+    save_plot(fig, plot_dir / f"{dataset_name}_missingness_top{top_n}.png")
 
 
-def plot_distribution(df: pd.DataFrame, column: str, dataset_name: str) -> None:
+def plot_distribution(df: pd.DataFrame, column: str, dataset_name: str, plot_dir: Path) -> None:
     if column not in df.columns:
         return
     series = pd.to_numeric(df[column], errors="coerce").dropna()
@@ -216,10 +219,10 @@ def plot_distribution(df: pd.DataFrame, column: str, dataset_name: str) -> None:
         axes[1].text(0.5, 0.5, "No positive values for log plot", ha="center", va="center")
         axes[1].set_axis_off()
 
-    save_plot(fig, f"{dataset_name}_{slugify(column)}_distribution.png")
+    save_plot(fig, plot_dir / f"{dataset_name}_{slugify(column)}_distribution.png")
 
 
-def plot_top_categories(df: pd.DataFrame, column: str, dataset_name: str, top_n: int = 10) -> None:
+def plot_top_categories(df: pd.DataFrame, column: str, dataset_name: str, plot_dir: Path, top_n: int = 10) -> None:
     if column not in df.columns:
         return
     counts = df[column].fillna("Missing").astype(str).value_counts().head(top_n)
@@ -231,7 +234,7 @@ def plot_top_categories(df: pd.DataFrame, column: str, dataset_name: str, top_n:
     ax.set_title(f"{dataset_name.replace('_', ' ').title()}: Top {top_n} values for {column}")
     ax.set_xlabel("Count")
     ax.set_ylabel("")
-    save_plot(fig, f"{dataset_name}_{slugify(column)}_top_categories.png")
+    save_plot(fig, plot_dir / f"{dataset_name}_{slugify(column)}_top_categories.png")
 
 
 def plot_value_by_category(
@@ -239,6 +242,7 @@ def plot_value_by_category(
     value_col: str,
     category_col: str,
     dataset_name: str,
+    plot_dir: Path,
     top_n: int = 10,
 ) -> None:
     if value_col not in df.columns or category_col not in df.columns:
@@ -260,10 +264,10 @@ def plot_value_by_category(
     if (working[value_col] > 0).all():
         ax.set_yscale("log")
         ax.set_ylabel(f"{value_col} (log scale)")
-    save_plot(fig, f"{dataset_name}_{slugify(value_col)}_by_{slugify(category_col)}.png")
+    save_plot(fig, plot_dir / f"{dataset_name}_{slugify(value_col)}_by_{slugify(category_col)}.png")
 
 
-def plot_time_trend(df: pd.DataFrame, date_col: str, value_col: str, dataset_name: str) -> None:
+def plot_time_trend(df: pd.DataFrame, date_col: str, value_col: str, dataset_name: str, plot_dir: Path) -> None:
     if date_col not in df.columns or value_col not in df.columns:
         return
     if not pd.api.types.is_datetime64_any_dtype(df[date_col]):
@@ -285,10 +289,10 @@ def plot_time_trend(df: pd.DataFrame, date_col: str, value_col: str, dataset_nam
     axes[1].set_title(f"{dataset_name.replace('_', ' ').title()}: median {value_col} by year")
     axes[1].set_ylabel(f"Median {value_col}")
     axes[1].set_xlabel("Year")
-    save_plot(fig, f"{dataset_name}_{slugify(value_col)}_time_trend.png")
+    save_plot(fig, plot_dir / f"{dataset_name}_{slugify(value_col)}_time_trend.png")
 
 
-def plot_correlation_heatmap(df: pd.DataFrame, dataset_name: str, target: str, max_features: int = 12) -> None:
+def plot_correlation_heatmap(df: pd.DataFrame, dataset_name: str, target: str, plot_dir: Path, max_features: int = 12) -> None:
     numeric_df = df.select_dtypes(include=[np.number]).copy()
     if numeric_df.empty or target not in numeric_df.columns:
         return
@@ -300,10 +304,10 @@ def plot_correlation_heatmap(df: pd.DataFrame, dataset_name: str, target: str, m
     fig, ax = plt.subplots(figsize=(10, 8))
     sns.heatmap(corr_matrix, annot=True, fmt=".2f", cmap="coolwarm", center=0, ax=ax)
     ax.set_title(f"{dataset_name.replace('_', ' ').title()}: correlation heatmap")
-    save_plot(fig, f"{dataset_name}_correlation_heatmap.png")
+    save_plot(fig, plot_dir / f"{dataset_name}_correlation_heatmap.png")
 
 
-def plot_outlier_boxplots(df: pd.DataFrame, columns: list[str], dataset_name: str) -> None:
+def plot_outlier_boxplots(df: pd.DataFrame, columns: list[str], dataset_name: str, plot_dir: Path) -> None:
     available_columns = [column for column in columns if column in df.columns]
     if not available_columns:
         return
@@ -320,10 +324,10 @@ def plot_outlier_boxplots(df: pd.DataFrame, columns: list[str], dataset_name: st
         ax.set_yscale("log")
         ax.set_ylabel("Value (log scale)")
     ax.set_title(f"{dataset_name.replace('_', ' ').title()}: numeric spread")
-    save_plot(fig, f"{dataset_name}_numeric_boxplots.png")
+    save_plot(fig, plot_dir / f"{dataset_name}_numeric_boxplots.png")
 
 
-def plot_hotel_trends(df: pd.DataFrame) -> None:
+def plot_hotel_trends(df: pd.DataFrame, plot_dir: Path) -> None:
     required = {"TIME_PERIOD", "Hotels Indicator", "Hotel Type", "OBS_VALUE"}
     if not required.issubset(df.columns):
         return
@@ -360,7 +364,7 @@ def plot_hotel_trends(df: pd.DataFrame) -> None:
         axes[idx].set_ylabel("Observation value")
         axes[idx].legend(loc="best", fontsize=8)
 
-    save_plot(fig, "hotel_stats_obs_value_trends.png")
+    save_plot(fig, plot_dir / "hotel_stats_obs_value_trends.png")
 
 
 def join_key_overlap(transactions: pd.DataFrame, rents: pd.DataFrame) -> pd.DataFrame:
@@ -392,7 +396,7 @@ def join_key_overlap(transactions: pd.DataFrame, rents: pd.DataFrame) -> pd.Data
     return pd.DataFrame(rows)
 
 
-def plot_join_overlap(overlap_df: pd.DataFrame) -> None:
+def plot_join_overlap(overlap_df: pd.DataFrame, plot_dir: Path) -> None:
     if overlap_df.empty:
         return
 
@@ -407,10 +411,11 @@ def plot_join_overlap(overlap_df: pd.DataFrame) -> None:
     ax.set_title("Transactions vs rent join-key coverage")
     ax.set_xlabel("Unique-key overlap coverage (%)")
     ax.set_ylabel("")
-    save_plot(fig, "transactions_rent_join_overlap.png")
+    save_plot(fig, plot_dir / "transactions_rent_join_overlap.png")
 
 
 def write_summary_report(
+    output_dir: Path,
     overview_df: pd.DataFrame,
     transaction_profile: pd.DataFrame,
     rent_profile: pd.DataFrame,
@@ -476,29 +481,49 @@ def write_summary_report(
         "4. Apply robust preprocessing for missing values, rare categories, and extreme numeric tails; linear models and tree models should be compared under the same train/validation/test protocol.",
     ]
 
-    (OUTPUT_DIR / "eda_summary.md").write_text("\n".join(report_lines) + "\n", encoding="utf-8")
+    (output_dir / "eda_summary.md").write_text("\n".join(report_lines) + "\n", encoding="utf-8")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run exploratory data analysis for the ML7501 real-estate project.")
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=DEFAULT_DATA_DIR,
+        help="Directory containing the input data files expected by the EDA pipeline.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help="Directory where EDA outputs will be written.",
+    )
+    return parser.parse_args()
 
 
 def run() -> None:
-    ensure_output_dirs()
+    args = parse_args()
+    output_dir = args.output_dir.resolve()
+    table_dir, plot_dir = ensure_output_dirs(output_dir)
     warnings.filterwarnings("ignore", category=FutureWarning, module="seaborn")
     warnings.filterwarnings("ignore", category=FutureWarning, module="pandas")
     sns.set_theme(style="whitegrid", context="talk")
 
-    loaded = {config.name: load_dataset(config) for config in DATASETS}
+    dataset_configs = make_dataset_configs(args.data_dir.resolve())
+    loaded = {config.name: load_dataset(config) for config in dataset_configs}
 
     overview_rows = []
     profiles: dict[str, pd.DataFrame] = {}
-    for config in DATASETS:
+    for config in dataset_configs:
         df = loaded[config.name]
         overview_rows.append(dataset_overview(config.name, df, config.date_columns))
 
         profile = column_profile(df)
         numeric = numeric_summary(df)
         profiles[config.name] = profile
-        save_dataframe(profile, TABLE_DIR / f"{config.name}_column_profile.csv")
-        save_dataframe(numeric, TABLE_DIR / f"{config.name}_numeric_summary.csv")
-        plot_missingness(df, config.name)
+        save_dataframe(profile, table_dir / f"{config.name}_column_profile.csv")
+        save_dataframe(numeric, table_dir / f"{config.name}_numeric_summary.csv")
+        plot_missingness(df, config.name, plot_dir)
 
     transactions = loaded["transactions"]
     rents = loaded["rent_contracts"]
@@ -512,39 +537,40 @@ def run() -> None:
     transaction_corr = top_correlations(transactions, "actual_worth")
     overlap_df = join_key_overlap(transactions, rents)
 
-    save_dataframe(pd.DataFrame(overview_rows), TABLE_DIR / "dataset_overview.csv")
-    save_dataframe(transaction_outliers, TABLE_DIR / "transactions_outlier_summary.csv")
-    save_dataframe(rent_outliers, TABLE_DIR / "rent_contracts_outlier_summary.csv")
-    save_dataframe(transaction_corr, TABLE_DIR / "transactions_top_correlations.csv")
-    save_dataframe(overlap_df, TABLE_DIR / "transactions_rent_join_overlap.csv")
+    save_dataframe(pd.DataFrame(overview_rows), table_dir / "dataset_overview.csv")
+    save_dataframe(transaction_outliers, table_dir / "transactions_outlier_summary.csv")
+    save_dataframe(rent_outliers, table_dir / "rent_contracts_outlier_summary.csv")
+    save_dataframe(transaction_corr, table_dir / "transactions_top_correlations.csv")
+    save_dataframe(overlap_df, table_dir / "transactions_rent_join_overlap.csv")
 
-    plot_distribution(transactions, "actual_worth", "transactions")
-    plot_distribution(transactions, "procedure_area", "transactions")
-    plot_distribution(rents, "annual_amount", "rent_contracts")
-    plot_distribution(rents, "actual_area", "rent_contracts")
+    plot_distribution(transactions, "actual_worth", "transactions", plot_dir)
+    plot_distribution(transactions, "procedure_area", "transactions", plot_dir)
+    plot_distribution(rents, "annual_amount", "rent_contracts", plot_dir)
+    plot_distribution(rents, "actual_area", "rent_contracts", plot_dir)
 
-    plot_top_categories(transactions, "procedure_name_en", "transactions")
-    plot_top_categories(transactions, "property_type_en", "transactions")
-    plot_top_categories(transactions, "property_usage_en", "transactions")
-    plot_top_categories(rents, "ejari_property_type_en", "rent_contracts")
-    plot_top_categories(rents, "contract_reg_type_en", "rent_contracts")
-    plot_top_categories(rents, "tenant_type_en", "rent_contracts")
+    plot_top_categories(transactions, "procedure_name_en", "transactions", plot_dir)
+    plot_top_categories(transactions, "property_type_en", "transactions", plot_dir)
+    plot_top_categories(transactions, "property_usage_en", "transactions", plot_dir)
+    plot_top_categories(rents, "ejari_property_type_en", "rent_contracts", plot_dir)
+    plot_top_categories(rents, "contract_reg_type_en", "rent_contracts", plot_dir)
+    plot_top_categories(rents, "tenant_type_en", "rent_contracts", plot_dir)
 
-    plot_value_by_category(transactions, "actual_worth", "property_type_en", "transactions")
-    plot_value_by_category(transactions, "actual_worth", "area_name_en", "transactions")
-    plot_value_by_category(rents, "annual_amount", "ejari_property_type_en", "rent_contracts")
-    plot_value_by_category(rents, "annual_amount", "area_name_en", "rent_contracts")
+    plot_value_by_category(transactions, "actual_worth", "property_type_en", "transactions", plot_dir)
+    plot_value_by_category(transactions, "actual_worth", "area_name_en", "transactions", plot_dir)
+    plot_value_by_category(rents, "annual_amount", "ejari_property_type_en", "rent_contracts", plot_dir)
+    plot_value_by_category(rents, "annual_amount", "area_name_en", "rent_contracts", plot_dir)
 
-    plot_time_trend(transactions, "instance_date", "actual_worth", "transactions")
-    plot_time_trend(rents, "contract_start_date", "annual_amount", "rent_contracts")
-    plot_correlation_heatmap(transactions, "transactions", "actual_worth")
-    plot_correlation_heatmap(rents, "rent_contracts", "annual_amount")
-    plot_outlier_boxplots(transactions, ["actual_worth", "procedure_area", "meter_sale_price"], "transactions")
-    plot_outlier_boxplots(rents, ["annual_amount", "actual_area", "contract_amount"], "rent_contracts")
-    plot_hotel_trends(hotel)
-    plot_join_overlap(overlap_df)
+    plot_time_trend(transactions, "instance_date", "actual_worth", "transactions", plot_dir)
+    plot_time_trend(rents, "contract_start_date", "annual_amount", "rent_contracts", plot_dir)
+    plot_correlation_heatmap(transactions, "transactions", "actual_worth", plot_dir)
+    plot_correlation_heatmap(rents, "rent_contracts", "annual_amount", plot_dir)
+    plot_outlier_boxplots(transactions, ["actual_worth", "procedure_area", "meter_sale_price"], "transactions", plot_dir)
+    plot_outlier_boxplots(rents, ["annual_amount", "actual_area", "contract_amount"], "rent_contracts", plot_dir)
+    plot_hotel_trends(hotel, plot_dir)
+    plot_join_overlap(overlap_df, plot_dir)
 
     write_summary_report(
+        output_dir=output_dir,
         overview_df=pd.DataFrame(overview_rows),
         transaction_profile=profiles["transactions"],
         rent_profile=profiles["rent_contracts"],

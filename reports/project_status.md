@@ -9,6 +9,7 @@
 - Artifact-based evaluation pipeline implemented in `src/evaluate_artifacts.py`
 - Appendix analysis implemented in `src/appendix_analysis.py`
 - Reproducibility tooling implemented with `src/validate_data.py`, `data/dataset_manifest.json`, and `requirements-lock.txt`
+- Tracked sample data and schema snapshots added under `data/sample/`, `data/sample_manifest.json`, and `data/schemas/`
 - EDA summaries, tables, and plots generated locally under `outputs/eda/`
 
 ## Main EDA Findings

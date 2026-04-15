@@ -15,6 +15,9 @@ These raw files are large and stay out of version control.
 Reproducibility files:
 
 - `data/dataset_manifest.json` records source URLs, expected filenames, expected shapes, required columns, and the exact SHA-256 hashes used for the tracked local reproduction snapshot.
+- `data/schemas/` contains tracked full schema snapshots for the three main CSV inputs.
+- `data/sample/` contains a lightweight tracked public sample for turn-key smoke runs.
+- `data/sample_manifest.json` records the tracked sample hashes and shapes.
 - `python3 -m src.validate_data` checks that the required files exist and have the expected schema.
 - `python3 -m src.validate_data --strict-hash` additionally enforces exact hash matching for bitwise reproduction of the local snapshot.
 

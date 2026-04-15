@@ -1,0 +1,58 @@
+{
+  "datasets": [
+    {
+      "filename": "Real-estate_Transactions_2026-03-27.csv",
+      "role": "sample_primary_supervised_table",
+      "required": true,
+      "source_url": "Sample derived from the public Dubai Land Department transaction dataset used in the project.",
+      "sha256": "122d76b048543b83ee45a30af5b4f09f4c6f2ef22bb206be02f6b56e6b2feec4",
+      "expected_rows": 400,
+      "expected_columns": 47,
+      "required_columns": [
+        "actual_worth",
+        "instance_date",
+        "area_id",
+        "area_name_en",
+        "property_type_en"
+      ]
+    },
+    {
+      "filename": "rent_contracts.csv",
+      "role": "sample_area_time_enrichment_table",
+      "required": true,
+      "source_url": "Sample derived from the public Dubai rental contracts dataset used in the project.",
+      "sha256": "a7e0ca41dae672e844eb3ec8725782b66e3cd7db5a8edb589c8e48e6b5a9ae42",
+      "expected_rows": 400,
+      "expected_columns": 41,
+      "required_columns": [
+        "contract_id",
+        "contract_start_date",
+        "annual_amount",
+        "area_id",
+        "area_name_en"
+      ]
+    },
+    {
+      "filename": "FCSA,DF_HOT_TYPE,4.3.0+...A.....csv",
+      "role": "sample_annual_macro_context_table",
+      "required": true,
+      "source_url": "Full hotel context table retained in sample mode because the source file is already lightweight.",
+      "sha256": "b5c57e537e1c76e6ff6f6f65c90c0c8cb5ad50cf3904b886436aa4b5788fc6f7",
+      "expected_rows": 108,
+      "expected_columns": 32,
+      "required_columns": [
+        "TIME_PERIOD",
+        "OBS_VALUE",
+        "H_TYPE",
+        "H_INDICATOR"
+      ]
+    },
+    {
+      "filename": "rent_contracts_page1.json",
+      "role": "sample_auxiliary_raw_reference",
+      "required": false,
+      "source_url": "Auxiliary sample JSON reference.",
+      "sha256": "244615ab41bab9abf1f264f67c7cdf47d523d95e8dd25c1009e9f8a9bccb3514"
+    }
+  ]
+}

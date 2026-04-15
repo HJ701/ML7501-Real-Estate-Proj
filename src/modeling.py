@@ -56,7 +56,7 @@ setattr(src_package, "modeling", sys.modules[__name__])
 sys.modules["src.modeling"] = sys.modules[__name__]
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = BASE_DIR / "data" / "raw"
+DEFAULT_DATA_DIR = BASE_DIR / "data" / "raw"
 DEFAULT_OUTPUT_DIR = BASE_DIR / "outputs" / "modeling" / "latest"
 RANDOM_STATE = 42
 DEFAULT_N_JOBS = 1
@@ -202,8 +202,8 @@ def coerce_numeric(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     return cleaned
 
 
-def load_transactions() -> pd.DataFrame:
-    path = DATA_DIR / "Real-estate_Transactions_2026-03-27.csv"
+def load_transactions(data_dir: Path) -> pd.DataFrame:
+    path = data_dir / "Real-estate_Transactions_2026-03-27.csv"
     df = pd.read_csv(path, low_memory=False)
     df = normalize_missing_values(df)
     df = coerce_numeric(df, TRANSACTIONS_NUMERIC_COLUMNS)
@@ -221,8 +221,8 @@ def load_transactions() -> pd.DataFrame:
     return df.sort_values("instance_date").reset_index(drop=True)
 
 
-def load_rent_contracts() -> pd.DataFrame:
-    path = DATA_DIR / "rent_contracts.csv"
+def load_rent_contracts(data_dir: Path) -> pd.DataFrame:
+    path = data_dir / "rent_contracts.csv"
     df = pd.read_csv(path, low_memory=False)
     df = normalize_missing_values(df)
     df = coerce_numeric(df, RENT_NUMERIC_COLUMNS)
@@ -232,8 +232,8 @@ def load_rent_contracts() -> pd.DataFrame:
     return df
 
 
-def load_hotel_stats() -> pd.DataFrame:
-    path = DATA_DIR / "FCSA,DF_HOT_TYPE,4.3.0+...A.....csv"
+def load_hotel_stats(data_dir: Path) -> pd.DataFrame:
+    path = data_dir / "FCSA,DF_HOT_TYPE,4.3.0+...A.....csv"
     df = pd.read_csv(path, low_memory=False)
     df = normalize_missing_values(df)
     df = coerce_numeric(df, HOTEL_NUMERIC_COLUMNS)
@@ -370,10 +370,10 @@ def build_hotel_features(hotel_df: pd.DataFrame, min_year: int, max_year: int) -
     return features.reset_index()
 
 
-def build_master_table() -> pd.DataFrame:
-    transactions = load_transactions()
-    rent = load_rent_contracts()
-    hotel = load_hotel_stats()
+def build_master_table(data_dir: Path = DEFAULT_DATA_DIR) -> pd.DataFrame:
+    transactions = load_transactions(data_dir=data_dir)
+    rent = load_rent_contracts(data_dir=data_dir)
+    hotel = load_hotel_stats(data_dir=data_dir)
 
     rent_features = build_rent_features(rent, transactions)
     hotel_features = build_hotel_features(
@@ -1047,6 +1047,12 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_OUTPUT_DIR,
         help="Directory where modeling artifacts will be saved.",
     )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        default=DEFAULT_DATA_DIR,
+        help="Directory containing the input data files expected by the pipeline.",
+    )
     parser.add_argument("--train-frac", type=float, default=0.70, help="Fraction of rows used for training.")
     parser.add_argument("--val-frac", type=float, default=0.15, help="Fraction of rows used for validation.")
     parser.add_argument(
@@ -1081,7 +1087,7 @@ def main() -> None:
     args = parse_args()
     directories = ensure_output_dirs(args.output_dir.resolve())
 
-    master = build_master_table()
+    master = build_master_table(data_dir=args.data_dir.resolve())
     save_dataframe(master, directories["tables"] / "modeling_master_table.csv")
 
     train_df, val_df, test_df = temporal_split(master, train_frac=args.train_frac, val_frac=args.val_frac)

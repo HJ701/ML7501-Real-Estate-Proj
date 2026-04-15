@@ -1,0 +1,211 @@
+{
+  "row_count": 5000,
+  "column_count": 41,
+  "columns": [
+    {
+      "name": "contract_amount",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "ejari_property_sub_type_ar",
+      "dtype": "object",
+      "missing_pct": 0.6
+    },
+    {
+      "name": "project_name_en",
+      "dtype": "object",
+      "missing_pct": 85.28
+    },
+    {
+      "name": "ejari_bus_property_type_ar",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "property_usage_en",
+      "dtype": "object",
+      "missing_pct": 0.12
+    },
+    {
+      "name": "contract_id",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "ejari_property_sub_type_en",
+      "dtype": "object",
+      "missing_pct": 0.6
+    },
+    {
+      "name": "project_name_ar",
+      "dtype": "object",
+      "missing_pct": 85.28
+    },
+    {
+      "name": "property_usage_ar",
+      "dtype": "object",
+      "missing_pct": 0.12
+    },
+    {
+      "name": "area_id",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "tenant_type_en",
+      "dtype": "object",
+      "missing_pct": 4.22
+    },
+    {
+      "name": "contract_start_date",
+      "dtype": "datetime64[ns]",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "contract_end_date",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "nearest_metro_en",
+      "dtype": "object",
+      "missing_pct": 10.72
+    },
+    {
+      "name": "ejari_bus_property_type_id",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "no_of_prop",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "line_number",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "nearest_mall_en",
+      "dtype": "object",
+      "missing_pct": 11.58
+    },
+    {
+      "name": "nearest_metro_ar",
+      "dtype": "object",
+      "missing_pct": 10.72
+    },
+    {
+      "name": "ejari_bus_property_type_en",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "ejari_property_sub_type_id",
+      "dtype": "float64",
+      "missing_pct": 0.58
+    },
+    {
+      "name": "nearest_mall_ar",
+      "dtype": "object",
+      "missing_pct": 11.58
+    },
+    {
+      "name": "tenant_type_id",
+      "dtype": "float64",
+      "missing_pct": 4.22
+    },
+    {
+      "name": "annual_amount",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "contract_reg_type_en",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "ejari_property_type_en",
+      "dtype": "object",
+      "missing_pct": 0.54
+    },
+    {
+      "name": "is_free_hold",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "master_project_en",
+      "dtype": "object",
+      "missing_pct": 66.4
+    },
+    {
+      "name": "contract_reg_type_ar",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "ejari_property_type_ar",
+      "dtype": "object",
+      "missing_pct": 0.54
+    },
+    {
+      "name": "nearest_landmark_en",
+      "dtype": "object",
+      "missing_pct": 7.7
+    },
+    {
+      "name": "area_name_en",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "load_timestamp",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "nearest_landmark_ar",
+      "dtype": "object",
+      "missing_pct": 7.7
+    },
+    {
+      "name": "ejari_property_type_id",
+      "dtype": "float64",
+      "missing_pct": 0.54
+    },
+    {
+      "name": "area_name_ar",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "project_number",
+      "dtype": "float64",
+      "missing_pct": 85.28
+    },
+    {
+      "name": "actual_area",
+      "dtype": "float64",
+      "missing_pct": 11.98
+    },
+    {
+      "name": "tenant_type_ar",
+      "dtype": "object",
+      "missing_pct": 4.22
+    },
+    {
+      "name": "master_project_ar",
+      "dtype": "object",
+      "missing_pct": 66.4
+    },
+    {
+      "name": "contract_reg_type_id",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    }
+  ]
+}

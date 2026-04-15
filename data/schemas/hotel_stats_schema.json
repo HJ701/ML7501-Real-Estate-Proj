@@ -1,0 +1,166 @@
+{
+  "row_count": 108,
+  "column_count": 32,
+  "columns": [
+    {
+      "name": "STRUCTURE",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "STRUCTURE_ID",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "STRUCTURE_NAME",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "ACTION",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "MEASURE",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "Measure",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "UNIT_MEASURE",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "Unit of measure",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "REF_AREA",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "Reference area",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "FREQ",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "Frequency",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "H_TYPE",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "Hotel Type",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "H_INDICATOR",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "Hotels Indicator",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "GUEST_REGION",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "Guests Nationality",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "SOURCE_DETAIL",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "Source",
+      "dtype": "object",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "TIME_PERIOD",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "Time period",
+      "dtype": "float64",
+      "missing_pct": 100.0
+    },
+    {
+      "name": "OBS_VALUE",
+      "dtype": "int64",
+      "missing_pct": 0.0
+    },
+    {
+      "name": "Observation value",
+      "dtype": "float64",
+      "missing_pct": 100.0
+    },
+    {
+      "name": "DECIMALS",
+      "dtype": "float64",
+      "missing_pct": 100.0
+    },
+    {
+      "name": "Decimals",
+      "dtype": "float64",
+      "missing_pct": 100.0
+    },
+    {
+      "name": "OBS_STATUS",
+      "dtype": "float64",
+      "missing_pct": 100.0
+    },
+    {
+      "name": "Observation status",
+      "dtype": "float64",
+      "missing_pct": 100.0
+    },
+    {
+      "name": "OBS_COMMENT",
+      "dtype": "float64",
+      "missing_pct": 100.0
+    },
+    {
+      "name": "Footnotes",
+      "dtype": "float64",
+      "missing_pct": 100.0
+    },
+    {
+      "name": "UNIT_MULT",
+      "dtype": "float64",
+      "missing_pct": 100.0
+    },
+    {
+      "name": "Unit multiplier",
+      "dtype": "float64",
+      "missing_pct": 100.0
+    }
+  ]
+}
