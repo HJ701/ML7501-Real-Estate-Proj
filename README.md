@@ -16,11 +16,13 @@ This project was built for `ML 7501 - Applied Machine Learning`. The core superv
 
 The repository now includes the full source pipeline:
 
+- [src/appendix_analysis.py](src/appendix_analysis.py): appendix tables for search spaces, ablation, and raw-vs-log comparison
 - [src/eda.py](src/eda.py): exploratory data analysis
 - [src/modeling.py](src/modeling.py): master-table construction, preprocessing, model training, tuning, artifact export
 - [src/evaluate_artifacts.py](src/evaluate_artifacts.py): rigorous post-training evaluation from saved artifacts
 - [reports/project_status.md](reports/project_status.md): concise project summary
 - [data/README.md](data/README.md): local raw-data notes
+- [reports/appendix_modeling_detail.md](reports/appendix_modeling_detail.md): exact search spaces, ablation table, and raw-vs-log target comparison
 
 ## Data Sources
 
@@ -94,6 +96,16 @@ The strongest regression model performs much worse on the highest-value band tha
 4. Model quality is materially better on typical transactions than on the most expensive segment.
 5. The EDA and early experiments support the original project hypothesis that non-linear ensemble methods should outperform simple linear baselines.
 
+## Submission Appendix
+
+For final-report polish, the repo includes a tracked appendix at [reports/appendix_modeling_detail.md](reports/appendix_modeling_detail.md) with:
+
+- exact hyperparameter search spaces used by the tracked source
+- a regression ablation table across structural, rent, hotel, and full feature sets
+- an explicit raw-target versus `log1p`-target comparison
+
+The key result from that appendix is that `log1p(actual_worth)` is clearly the correct target treatment for this problem, while the current coarse rent/hotel features still need refinement to beat the structural-location baseline.
+
 ## Repository Layout
 
 ```text
@@ -110,9 +122,11 @@ ML7501-Real-Estate-Proj/
 │   ├── proposal/             # local proposal reference
 │   └── figures/              # tracked summary figures used in the README
 ├── reports/
-│   └── project_status.md
+│   ├── project_status.md
+│   └── appendix_modeling_detail.md
 ├── src/
 │   ├── __init__.py
+│   ├── appendix_analysis.py
 │   ├── eda.py
 │   ├── modeling.py
 │   └── evaluate_artifacts.py
@@ -132,6 +146,12 @@ python3 -m src.eda
 ```
 
 This generates summary tables and plots under `outputs/eda/`.
+
+## Generate The Appendix Tables
+
+```bash
+python3 -m src.appendix_analysis --artifact-dir outputs/modeling/gpu_run --output-dir outputs/reporting/appendix
+```
 
 ## Run The End-to-End Modeling Pipeline
 

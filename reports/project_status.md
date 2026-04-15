@@ -7,6 +7,7 @@
 - Exploratory data analysis implemented in `src/eda.py`
 - End-to-end modeling pipeline implemented in `src/modeling.py`
 - Artifact-based evaluation pipeline implemented in `src/evaluate_artifacts.py`
+- Appendix analysis implemented in `src/appendix_analysis.py`
 - EDA summaries, tables, and plots generated locally under `outputs/eda/`
 
 ## Main EDA Findings
