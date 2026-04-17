@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 from pathlib import Path
@@ -14,7 +15,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from joblib import load
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator, TransformerMixin, clone
+from sklearn.compose import TransformedTargetRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
@@ -29,7 +32,10 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
+from sklearn.pipeline import Pipeline
 from sklearn.utils.validation import check_is_fitted
+
+from src.modeling import build_preprocessor
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_ARTIFACT_DIR = BASE_DIR / "outputs" / "modeling" / "gpu_run"
@@ -206,6 +212,25 @@ def load_saved_metrics(artifact_dir: Path, task: str) -> pd.DataFrame:
     return pd.read_csv(artifact_dir / "tables" / f"{task}_test_metrics.csv")
 
 
+def parse_hist_gradient_boosting_params(artifact_dir: Path) -> dict[str, object]:
+    tuning_path = artifact_dir / "tables" / "regression_tuning_results.csv"
+    if not tuning_path.exists():
+        return {}
+
+    tuning_df = pd.read_csv(tuning_path)
+    matches = tuning_df.loc[tuning_df["model_name"] == "hist_gradient_boosting"]
+    if matches.empty:
+        return {}
+
+    params = ast.literal_eval(matches.iloc[0]["best_params"])
+    prefix = "regressor__model__"
+    cleaned = {}
+    for key, value in params.items():
+        if key.startswith(prefix):
+            cleaned[key[len(prefix) :]] = value
+    return cleaned
+
+
 def enrich_regression_metrics(metrics_df: pd.DataFrame) -> pd.DataFrame:
     enriched = metrics_df.copy()
     enriched["rmse_rank"] = enriched["rmse"].rank(method="min")
@@ -251,6 +276,46 @@ def load_models(artifact_dir: Path, task: str) -> dict[str, object]:
             sys.modules.setdefault("numpy._core", np.core)
             models[model_name] = load(path)
     return models
+
+
+def make_quantile_regression_pipeline(X_train: pd.DataFrame, estimator: HistGradientBoostingRegressor):
+    preprocessor = build_preprocessor(X_train)
+    return TransformedTargetRegressor(
+        regressor=Pipeline(
+            steps=[
+                ("preprocessor", clone(preprocessor)),
+                ("model", clone(estimator)),
+            ]
+        ),
+        func=np.log1p,
+        inverse_func=np.expm1,
+    )
+
+
+def fit_quantile_interval_models(
+    artifact_dir: Path,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    quantiles: tuple[float, float, float] = (0.05, 0.50, 0.95),
+) -> dict[float, object]:
+    tuned_params = parse_hist_gradient_boosting_params(artifact_dir)
+    estimator_params = {
+        "random_state": RANDOM_STATE,
+        "learning_rate": 0.05,
+        "max_iter": 350,
+        "max_depth": 8,
+    }
+    estimator_params.update(tuned_params)
+    base_estimator = HistGradientBoostingRegressor(**estimator_params)
+
+    fitted_models: dict[float, object] = {}
+    for quantile in quantiles:
+        estimator = clone(base_estimator)
+        estimator.set_params(loss="quantile", quantile=quantile)
+        model = make_quantile_regression_pipeline(X_train=X_train, estimator=estimator)
+        model.fit(X_train, y_train)
+        fitted_models[quantile] = model
+    return fitted_models
 
 
 def build_model_outputs(
@@ -365,13 +430,35 @@ def regression_value_bands(y_true: pd.Series) -> pd.Categorical:
     )
 
 
-def build_regression_analysis_tables(test_df: pd.DataFrame, predictions: np.ndarray) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def build_regression_analysis_tables(
+    test_df: pd.DataFrame,
+    predictions: np.ndarray,
+    interval_lower: np.ndarray | None = None,
+    interval_upper: np.ndarray | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     analysis = test_df.copy()
     analysis["prediction"] = predictions
     analysis["residual"] = analysis["actual_worth"] - analysis["prediction"]
     analysis["absolute_error"] = analysis["residual"].abs()
     analysis["ape"] = analysis["absolute_error"] / analysis["actual_worth"].replace(0, np.nan)
     analysis["value_band"] = regression_value_bands(analysis["actual_worth"])
+
+    if interval_lower is not None and interval_upper is not None:
+        analysis["prediction_interval_lower"] = interval_lower
+        analysis["prediction_interval_upper"] = interval_upper
+        analysis["interval_width"] = analysis["prediction_interval_upper"] - analysis["prediction_interval_lower"]
+        analysis["interval_contains_actual"] = (
+            analysis["actual_worth"].between(
+                analysis["prediction_interval_lower"],
+                analysis["prediction_interval_upper"],
+                inclusive="both",
+            )
+        ).astype(int)
+    else:
+        analysis["prediction_interval_lower"] = np.nan
+        analysis["prediction_interval_upper"] = np.nan
+        analysis["interval_width"] = np.nan
+        analysis["interval_contains_actual"] = np.nan
 
     value_band_summary = (
         analysis.groupby("value_band", observed=False)
@@ -381,6 +468,9 @@ def build_regression_analysis_tables(test_df: pd.DataFrame, predictions: np.ndar
             predicted_mean=("prediction", "mean"),
             mae=("absolute_error", "mean"),
             median_ape=("ape", "median"),
+            signed_error_mean=("residual", "mean"),
+            interval_coverage_90=("interval_contains_actual", "mean"),
+            mean_interval_width=("interval_width", "mean"),
         )
         .reset_index()
     )
@@ -393,6 +483,7 @@ def build_regression_analysis_tables(test_df: pd.DataFrame, predictions: np.ndar
             rmse=("residual", lambda s: float(np.sqrt(np.mean(np.square(s))))),
             actual_mean=("actual_worth", "mean"),
             predicted_mean=("prediction", "mean"),
+            interval_coverage_90=("interval_contains_actual", "mean"),
         )
         .reset_index()
         .sort_values("transaction_year")
@@ -406,13 +497,15 @@ def build_regression_analysis_tables(test_df: pd.DataFrame, predictions: np.ndar
             "prediction",
             "residual",
             "absolute_error",
+            "prediction_interval_lower",
+            "prediction_interval_upper",
             "area_name_en",
             "property_type_en",
             "procedure_name_en",
         ]
     ].sort_values("absolute_error", ascending=False).head(25)
 
-    return value_band_summary, year_summary, top_errors
+    return value_band_summary, year_summary, top_errors, analysis
 
 
 def build_classification_analysis_tables(
@@ -483,6 +576,32 @@ def build_classification_analysis_tables(
     return year_summary, property_summary, calibration
 
 
+def build_luxury_calibration_table(regression_analysis: pd.DataFrame) -> pd.DataFrame:
+    luxury = regression_analysis.loc[regression_analysis["value_band"].astype(str) == "Q4_high"].copy()
+    if luxury.empty:
+        return pd.DataFrame()
+
+    n_bins = min(5, luxury["prediction"].nunique(), len(luxury))
+    if n_bins >= 2:
+        luxury["luxury_prediction_bin"] = pd.qcut(luxury["prediction"], q=n_bins, duplicates="drop")
+    else:
+        luxury["luxury_prediction_bin"] = "all_luxury_predictions"
+
+    return (
+        luxury.groupby("luxury_prediction_bin", observed=False)
+        .agg(
+            count=("actual_worth", "size"),
+            mean_actual=("actual_worth", "mean"),
+            mean_prediction=("prediction", "mean"),
+            mae=("absolute_error", "mean"),
+            mean_signed_error=("residual", "mean"),
+            interval_coverage_90=("interval_contains_actual", "mean"),
+            mean_interval_width=("interval_width", "mean"),
+        )
+        .reset_index()
+    )
+
+
 def plot_regression_by_year(year_df: pd.DataFrame, output_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(year_df["transaction_year"], year_df["mae"], marker="o", color="#0f4c5c")
@@ -500,6 +619,37 @@ def plot_regression_value_bands(value_band_df: pd.DataFrame, output_path: Path) 
     ax.set_title("Best regression model: MAE by target value band")
     ax.set_xlabel("Actual sale-price band")
     ax.set_ylabel("MAE")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_regression_interval_coverage(value_band_df: pd.DataFrame, output_path: Path) -> None:
+    plot_df = value_band_df.dropna(subset=["interval_coverage_90"])
+    if plot_df.empty:
+        return
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.bar(plot_df["value_band"].astype(str), plot_df["interval_coverage_90"], color="#2a9d8f")
+    ax.axhline(0.90, linestyle="--", color="#bc4749")
+    ax.set_title("Best regression model: 90% interval coverage by value band")
+    ax.set_xlabel("Actual sale-price band")
+    ax.set_ylabel("Observed coverage")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_luxury_calibration(luxury_df: pd.DataFrame, output_path: Path) -> None:
+    if luxury_df.empty:
+        return
+    fig, ax = plt.subplots(figsize=(7, 6))
+    ax.plot(luxury_df["mean_prediction"], luxury_df["mean_actual"], marker="o", color="#1f6f8b")
+    diagonal_min = min(luxury_df["mean_prediction"].min(), luxury_df["mean_actual"].min())
+    diagonal_max = max(luxury_df["mean_prediction"].max(), luxury_df["mean_actual"].max())
+    ax.plot([diagonal_min, diagonal_max], [diagonal_min, diagonal_max], linestyle="--", color="#bc4749")
+    ax.set_title("Luxury segment calibration")
+    ax.set_xlabel("Mean predicted price")
+    ax.set_ylabel("Mean actual price")
     fig.tight_layout()
     fig.savefig(output_path, dpi=220, bbox_inches="tight")
     plt.close(fig)
@@ -563,6 +713,7 @@ def build_markdown_summary(
     classification_bootstrap: pd.DataFrame,
     regression_year: pd.DataFrame,
     regression_value_bands: pd.DataFrame,
+    luxury_calibration: pd.DataFrame,
     classification_year: pd.DataFrame,
     classification_property: pd.DataFrame,
 ) -> None:
@@ -577,6 +728,8 @@ def build_markdown_summary(
         reg_year_peak = regression_year.sort_values("mae", ascending=False).iloc[0]
         reg_band_peak = regression_value_bands.sort_values("mae", ascending=False).iloc[0]
         reg_rmse_ci = regression_bootstrap.loc[regression_bootstrap["metric"] == "rmse"].iloc[0]
+        luxury_band = regression_value_bands.loc[regression_value_bands["value_band"].astype(str) == "Q4_high"]
+        luxury_band_row = luxury_band.iloc[0] if not luxury_band.empty else None
         lines.extend(
             [
                 f"- Best regression model: `{best_reg['model_name']}` with RMSE `{best_reg['rmse']:,.2f}`, MAE `{best_reg['mae']:,.2f}`, and R2 `{best_reg['r2']:.4f}`.",
@@ -585,6 +738,19 @@ def build_markdown_summary(
                 f"- Hardest regression target band: `{reg_band_peak['value_band']}` with MAE `{reg_band_peak['mae']:,.2f}`.",
             ]
         )
+        if luxury_band_row is not None and pd.notna(luxury_band_row["interval_coverage_90"]):
+            lines.extend(
+                [
+                    f"- Q4 luxury-band uncertainty check: observed 90% interval coverage `{luxury_band_row['interval_coverage_90']:.3f}` with mean interval width `{luxury_band_row['mean_interval_width']:,.2f}`.",
+                ]
+            )
+        if not luxury_calibration.empty:
+            worst_luxury_bin = luxury_calibration.sort_values("mae", ascending=False).iloc[0]
+            lines.extend(
+                [
+                    f"- Worst calibrated luxury slice: bin `{worst_luxury_bin['luxury_prediction_bin']}` with MAE `{worst_luxury_bin['mae']:,.2f}` and interval coverage `{worst_luxury_bin['interval_coverage_90']:.3f}`.",
+                ]
+            )
 
     if not classification_metrics.empty:
         best_clf = classification_metrics.iloc[0]
@@ -606,6 +772,7 @@ def build_markdown_summary(
             [
                 "- The evaluation confirms that the tree-based gradient boosting model is the strongest artifact on both tasks, which is consistent with the non-linear, interaction-heavy hypothesis in the proposal.",
                 "- Regression error grows sharply in the highest-price band, so the report should emphasize that performance is materially better for typical transactions than for extreme luxury or unusually large deals.",
+                "- The new quantile intervals make that luxury-tail risk explicit: interval coverage and width should be discussed alongside point RMSE so the report does not overstate certainty in the heavy-tailed segment.",
                 "- Classification remains strong overall, but subgroup accuracy varies by year and property type, which supports a nuanced discussion of temporal drift instead of reporting a single headline metric.",
             ]
         )
@@ -614,6 +781,7 @@ def build_markdown_summary(
             [
                 "- The regression evaluation confirms that non-linear ensemble methods are materially stronger than the baseline and linear comparators on this problem.",
                 "- Error grows in the upper-value tail, so subgroup analysis by price band is necessary to avoid overstating average performance.",
+                "- Prediction intervals and luxury-segment calibration add a needed uncertainty layer for a heavy-tailed target where point estimates alone are not sufficient.",
             ]
         )
     elif not classification_metrics.empty:
@@ -632,9 +800,17 @@ def main() -> None:
     output_dirs = ensure_output_dirs(args.output_dir.resolve())
 
     master = load_master_table(artifact_dir)
-    train_df, _, test_df = temporal_split(master, train_frac=0.70, val_frac=0.15)
+    train_df, val_df, test_df = temporal_split(master, train_frac=0.70, val_frac=0.15)
     X_test = select_model_features(test_df)
     y_test_reg = test_df["actual_worth"].reset_index(drop=True)
+    X_dev_reg = pd.concat(
+        [select_model_features(train_df), select_model_features(val_df)],
+        axis=0,
+    ).reset_index(drop=True)
+    y_dev_reg = pd.concat(
+        [train_df["actual_worth"], val_df["actual_worth"]],
+        axis=0,
+    ).reset_index(drop=True)
 
     threshold = float(train_df["actual_worth"].quantile(args.classification_quantile))
     y_test_clf = test_df["actual_worth"].ge(threshold).astype(int).reset_index(drop=True)
@@ -648,6 +824,7 @@ def main() -> None:
     classification_bootstrap = pd.DataFrame()
     reg_year = pd.DataFrame()
     reg_value_bands = pd.DataFrame()
+    reg_luxury_calibration = pd.DataFrame()
     clf_year = pd.DataFrame()
     clf_property = pd.DataFrame()
 
@@ -685,6 +862,33 @@ def main() -> None:
 
         best_regression_name = regression_metrics.iloc[0]["model_name"]
         best_regression_pred = regression_predictions[best_regression_name]["y_pred"].to_numpy()
+        quantile_models = fit_quantile_interval_models(
+            artifact_dir=artifact_dir,
+            X_train=X_dev_reg,
+            y_train=y_dev_reg,
+        )
+        lower_pred = quantile_models[0.05].predict(X_test)
+        median_pred = quantile_models[0.50].predict(X_test)
+        upper_pred = quantile_models[0.95].predict(X_test)
+        interval_frame = pd.DataFrame(
+            {
+                "actual_worth": y_test_reg.to_numpy(),
+                "prediction": best_regression_pred,
+                "prediction_interval_lower": lower_pred,
+                "prediction_interval_median": median_pred,
+                "prediction_interval_upper": upper_pred,
+            }
+        )
+        interval_frame["interval_width"] = (
+            interval_frame["prediction_interval_upper"] - interval_frame["prediction_interval_lower"]
+        )
+        interval_frame["interval_contains_actual"] = interval_frame["actual_worth"].between(
+            interval_frame["prediction_interval_lower"],
+            interval_frame["prediction_interval_upper"],
+            inclusive="both",
+        )
+        save_dataframe(interval_frame, output_dirs["tables"] / "regression_best_prediction_intervals.csv")
+
         regression_bootstrap = bootstrap_regression_ci(
             y_true=y_test_reg,
             y_pred=best_regression_pred,
@@ -693,12 +897,27 @@ def main() -> None:
         )
         save_dataframe(regression_bootstrap, output_dirs["tables"] / "regression_best_bootstrap_ci.csv")
 
-        reg_value_bands, reg_year, reg_top_errors = build_regression_analysis_tables(test_df, best_regression_pred)
+        reg_value_bands, reg_year, reg_top_errors, reg_analysis = build_regression_analysis_tables(
+            test_df,
+            best_regression_pred,
+            interval_lower=lower_pred,
+            interval_upper=upper_pred,
+        )
+        reg_luxury_calibration = build_luxury_calibration_table(reg_analysis)
         save_dataframe(reg_value_bands, output_dirs["tables"] / "regression_best_value_band_summary.csv")
         save_dataframe(reg_year, output_dirs["tables"] / "regression_best_year_summary.csv")
         save_dataframe(reg_top_errors, output_dirs["tables"] / "regression_best_top_errors.csv")
+        save_dataframe(reg_luxury_calibration, output_dirs["tables"] / "regression_best_luxury_calibration.csv")
         plot_regression_by_year(reg_year, output_dirs["plots"] / "regression_best_mae_by_year.png")
         plot_regression_value_bands(reg_value_bands, output_dirs["plots"] / "regression_best_mae_by_value_band.png")
+        plot_regression_interval_coverage(
+            reg_value_bands,
+            output_dirs["plots"] / "regression_best_interval_coverage_by_value_band.png",
+        )
+        plot_luxury_calibration(
+            reg_luxury_calibration,
+            output_dirs["plots"] / "regression_best_luxury_calibration.png",
+        )
 
     if classification_models:
         _, classification_metrics, _, classification_predictions = build_model_outputs(
@@ -772,6 +991,7 @@ def main() -> None:
         classification_bootstrap=classification_bootstrap,
         regression_year=reg_year,
         regression_value_bands=reg_value_bands,
+        luxury_calibration=reg_luxury_calibration,
         classification_year=clf_year,
         classification_property=clf_property,
     )

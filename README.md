@@ -16,14 +16,14 @@ This project was built for `ML 7501 - Applied Machine Learning`. The core superv
 
 The repository now includes the full source pipeline:
 
-- [src/appendix_analysis.py](src/appendix_analysis.py): appendix tables for search spaces, ablation, and raw-vs-log comparison
+- [src/appendix_analysis.py](src/appendix_analysis.py): rolling-origin backtests, formal feature ablation, significance checks, and raw-vs-log robustness tables
 - [src/eda.py](src/eda.py): exploratory data analysis
 - [src/modeling.py](src/modeling.py): master-table construction, preprocessing, model training, tuning, artifact export
-- [src/evaluate_artifacts.py](src/evaluate_artifacts.py): rigorous post-training evaluation from saved artifacts
+- [src/evaluate_artifacts.py](src/evaluate_artifacts.py): rigorous post-training evaluation from saved artifacts, including regression intervals and luxury-tail calibration
 - [src/validate_data.py](src/validate_data.py): raw-data manifest and schema validation
 - [reports/project_status.md](reports/project_status.md): concise project summary
 - [data/README.md](data/README.md): local raw-data notes
-- [reports/appendix_modeling_detail.md](reports/appendix_modeling_detail.md): exact search spaces, ablation table, and raw-vs-log target comparison
+- [reports/appendix_modeling_detail.md](reports/appendix_modeling_detail.md): summary of the strengthened evaluation/reporting protocol
 
 ## Data Sources
 
@@ -62,7 +62,7 @@ Transactions and rent records have strong overlap at `area_id` and `area_name_en
 
 ## Model Performance Snapshot
 
-These metrics come from the strongest local experiment artifacts produced by the tracked source pipeline.
+These metrics come from the strongest saved artifacts, but they should now be interpreted alongside the rolling-origin backtest outputs rather than as standalone headline numbers.
 
 ### Best Regression Result
 
@@ -97,19 +97,21 @@ The strongest regression model performs much worse on the highest-value band tha
 
 1. Tree-based gradient boosting is the strongest model family for both regression and classification in the current experiments.
 2. The problem is non-linear and interaction-heavy; size alone is not enough to explain property value.
-3. Location and local market context add real predictive value, but they must be engineered carefully to avoid leakage.
-4. Model quality is materially better on typical transactions than on the most expensive segment.
-5. The EDA and early experiments support the original project hypothesis that non-linear ensemble methods should outperform simple linear baselines.
+3. Context features should be justified by rolling-fold ablation evidence instead of a single held-out split.
+4. Model quality is materially better on typical transactions than on the most expensive segment, so interval coverage and luxury-tail calibration matter.
+5. The EDA and experiments support the original project hypothesis that non-linear ensemble methods should outperform simple linear baselines, but temporal instability still needs to be reported explicitly.
 
 ## Submission Appendix
 
-For final-report polish, the repo includes a tracked appendix at [reports/appendix_modeling_detail.md](reports/appendix_modeling_detail.md) with:
+For final-report polish, the repo includes a tracked appendix note at [reports/appendix_modeling_detail.md](reports/appendix_modeling_detail.md) and a generated appendix pipeline in `src.appendix_analysis` with:
 
 - exact hyperparameter search spaces used by the tracked source
-- a regression ablation table across structural, rent, hotel, and full feature sets
-- an explicit raw-target versus `log1p`-target comparison
+- rolling-origin summaries for the saved best regression and classification models
+- regression ablation across structural-only, location-only, rental-enriched, and full-feature variants
+- paired significance-style checks on ablation gains across temporal folds
+- an explicit raw-target versus `log1p`-target comparison across rolling folds
 
-The key result from that appendix is that `log1p(actual_worth)` is clearly the correct target treatment for this problem, while the current coarse rent/hotel features still need refinement to beat the structural-location baseline.
+The key reporting upgrade is that temporal robustness, ablation evidence, and target-treatment robustness are now generated from repeated forward-looking folds instead of one validation/test narrative.
 
 ## Repository Layout
 
@@ -216,6 +218,7 @@ Important options:
 
 - `--train-frac 0.70`
 - `--val-frac 0.15`
+- `--backtest-splits 5`
 - `--classification-quantile 0.75`
 - `--tune-iterations 8`
 - `--cv-splits 4`
@@ -229,7 +232,7 @@ python3 -m src.modeling --data-dir data/sample --task regression --tune-iteratio
 
 ## Run Artifact Evaluation
 
-Evaluate a saved artifact directory and generate enriched metrics, subgroup analysis, and summary plots:
+Evaluate a saved artifact directory and generate enriched metrics, subgroup analysis, regression prediction intervals, and luxury-tail calibration plots:
 
 ```bash
 python3 -m src.evaluate_artifacts \
@@ -258,6 +261,8 @@ After running the full pipeline, the main local outputs are:
 - `outputs/evaluation/<run_name>/tables/`
 - `outputs/evaluation/<run_name>/plots/`
 - `outputs/evaluation/<run_name>/summaries/`
+- `outputs/reporting/<run_name>/tables/`
+- `outputs/reporting/<run_name>/summaries/`
 
 ## Notes
 

@@ -130,6 +130,32 @@ DATE_COLUMNS_TO_DROP = {
     "transaction_month",
 }
 
+LOCATION_FEATURE_COLUMNS = {
+    "area_name_en",
+    "project_name_en",
+    "building_name_en",
+    "master_project_en",
+    "nearest_metro_en",
+    "nearest_mall_en",
+    "nearest_landmark_en",
+}
+
+LOCATION_FEATURE_PREFIXES = (
+    "area_",
+    "nearest_",
+    "project_",
+    "building_",
+    "master_project_",
+)
+
+TIME_FEATURE_COLUMNS = {
+    "transaction_year",
+    "transaction_quarter",
+    "transaction_month_number",
+    "transaction_day_of_week",
+    "days_since_2010",
+}
+
 
 @dataclass(frozen=True)
 class ModelSpec:
@@ -404,6 +430,132 @@ def temporal_split(
     val = ordered.iloc[train_end:val_end].copy()
     test = ordered.iloc[val_end:].copy()
     return train, val, test
+
+
+def summarize_temporal_slice(df: pd.DataFrame, prefix: str) -> dict[str, object]:
+    if df.empty:
+        return {
+            f"{prefix}_rows": 0,
+            f"{prefix}_start": None,
+            f"{prefix}_end": None,
+        }
+    return {
+        f"{prefix}_rows": int(len(df)),
+        f"{prefix}_start": str(df["instance_date"].min().date()),
+        f"{prefix}_end": str(df["instance_date"].max().date()),
+    }
+
+
+def build_split_summary(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+) -> dict[str, object]:
+    summary: dict[str, object] = {}
+    summary.update(summarize_temporal_slice(train_df, "train"))
+    summary.update(summarize_temporal_slice(val_df, "validation"))
+    summary.update(summarize_temporal_slice(test_df, "test"))
+    return summary
+
+
+def expanding_window_splits(
+    df: pd.DataFrame,
+    n_splits: int = 5,
+    min_train_size: int | None = None,
+    test_size: int | None = None,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    ordered = df.sort_values("instance_date").reset_index(drop=True)
+    n_rows = len(ordered)
+    if n_rows < 3:
+        return []
+
+    if min_train_size is None:
+        min_train_size = max(50, int(n_rows * 0.50))
+    min_train_size = min(max(1, min_train_size), n_rows - 2)
+
+    remaining = n_rows - min_train_size
+    if remaining <= 0:
+        return []
+
+    if test_size is None:
+        test_size = max(25, int(n_rows * 0.10))
+    test_size = min(max(1, test_size), remaining)
+
+    max_splits = max(1, remaining // test_size)
+    effective_splits = min(max(1, n_splits), max_splits)
+    first_test_start = n_rows - (effective_splits * test_size)
+
+    if first_test_start < min_train_size:
+        first_test_start = min_train_size
+        effective_splits = max(1, (n_rows - first_test_start) // test_size)
+
+    folds: list[tuple[np.ndarray, np.ndarray]] = []
+    for fold_id in range(effective_splits):
+        test_start = first_test_start + (fold_id * test_size)
+        test_end = min(test_start + test_size, n_rows)
+        if test_end <= test_start or test_start <= 0:
+            continue
+        train_idx = np.arange(0, test_start)
+        test_idx = np.arange(test_start, test_end)
+        if len(train_idx) == 0 or len(test_idx) == 0:
+            continue
+        folds.append((train_idx, test_idx))
+    return folds
+
+
+def describe_expanding_window_splits(
+    df: pd.DataFrame,
+    folds: list[tuple[np.ndarray, np.ndarray]],
+) -> pd.DataFrame:
+    ordered = df.sort_values("instance_date").reset_index(drop=True)
+    rows: list[dict[str, object]] = []
+    for fold_number, (train_idx, test_idx) in enumerate(folds, start=1):
+        train_df = ordered.iloc[train_idx]
+        test_df = ordered.iloc[test_idx]
+        rows.append(
+            {
+                "fold": fold_number,
+                "train_rows": int(len(train_df)),
+                "test_rows": int(len(test_df)),
+                "train_start": str(train_df["instance_date"].min().date()),
+                "train_end": str(train_df["instance_date"].max().date()),
+                "test_start": str(test_df["instance_date"].min().date()),
+                "test_end": str(test_df["instance_date"].max().date()),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_feature_family_map(columns: list[str] | pd.Index) -> dict[str, list[str]]:
+    ordered_columns = list(columns)
+    families = {
+        "rent": [column for column in ordered_columns if column.startswith("rent_")],
+        "hotel": [column for column in ordered_columns if column.startswith("hotel_")],
+        "location": [
+            column
+            for column in ordered_columns
+            if column in LOCATION_FEATURE_COLUMNS or column.startswith(LOCATION_FEATURE_PREFIXES)
+        ],
+        "time": [column for column in ordered_columns if column in TIME_FEATURE_COLUMNS],
+    }
+
+    assigned = set().union(*families.values())
+    families["structural"] = [column for column in ordered_columns if column not in assigned]
+    return families
+
+
+def build_feature_variants(columns: list[str] | pd.Index) -> dict[str, list[str]]:
+    families = build_feature_family_map(columns)
+    structural_only = families["structural"] + families["time"]
+    location_only = families["location"] + families["time"]
+    rental_enriched = structural_only + families["location"] + families["rent"]
+    full_feature_set = list(columns)
+    return {
+        "structural_only": structural_only,
+        "location_only": location_only,
+        "rental_enriched": rental_enriched,
+        "full_feature_set": full_feature_set,
+    }
 
 
 def select_model_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -979,6 +1131,7 @@ def choose_best_model(metrics_df: pd.DataFrame, task: str) -> str:
 def build_markdown_summary(
     output_path: Path,
     split_summary: dict[str, object],
+    rolling_plan: pd.DataFrame,
     regression_metrics: pd.DataFrame | None,
     classification_metrics: pd.DataFrame | None,
     classification_threshold: float | None,
@@ -994,6 +1147,17 @@ def build_markdown_summary(
         f"- Validation date range: {split_summary['validation_start']} to {split_summary['validation_end']}",
         f"- Test date range: {split_summary['test_start']} to {split_summary['test_end']}",
     ]
+
+    if not rolling_plan.empty:
+        lines.extend(
+            [
+                "",
+                "## Rolling-Origin Backtest Plan",
+                f"- Expanding-window folds: {len(rolling_plan)}",
+                f"- First fold train/test window: {rolling_plan.iloc[0]['train_start']} to {rolling_plan.iloc[0]['train_end']} / {rolling_plan.iloc[0]['test_start']} to {rolling_plan.iloc[0]['test_end']}",
+                f"- Last fold train/test window: {rolling_plan.iloc[-1]['train_start']} to {rolling_plan.iloc[-1]['train_end']} / {rolling_plan.iloc[-1]['test_start']} to {rolling_plan.iloc[-1]['test_end']}",
+            ]
+        )
 
     if classification_threshold is not None:
         lines.extend(
@@ -1068,6 +1232,12 @@ def parse_args() -> argparse.Namespace:
         help="Number of random-search iterations per tuned model.",
     )
     parser.add_argument("--cv-splits", type=int, default=4, help="Number of time-series CV splits for tuning.")
+    parser.add_argument(
+        "--backtest-splits",
+        type=int,
+        default=5,
+        help="Number of expanding-window folds to save for downstream robustness analysis.",
+    )
     parser.add_argument("--random-state", type=int, default=RANDOM_STATE, help="Random seed.")
     parser.add_argument(
         "--n-jobs",
@@ -1091,18 +1261,11 @@ def main() -> None:
     save_dataframe(master, directories["tables"] / "modeling_master_table.csv")
 
     train_df, val_df, test_df = temporal_split(master, train_frac=args.train_frac, val_frac=args.val_frac)
-    split_summary = {
-        "train_rows": int(len(train_df)),
-        "validation_rows": int(len(val_df)),
-        "test_rows": int(len(test_df)),
-        "train_start": str(train_df["instance_date"].min().date()),
-        "train_end": str(train_df["instance_date"].max().date()),
-        "validation_start": str(val_df["instance_date"].min().date()),
-        "validation_end": str(val_df["instance_date"].max().date()),
-        "test_start": str(test_df["instance_date"].min().date()),
-        "test_end": str(test_df["instance_date"].max().date()),
-    }
+    split_summary = build_split_summary(train_df, val_df, test_df)
     save_json(split_summary, directories["summaries"] / "split_summary.json")
+    rolling_folds = expanding_window_splits(master, n_splits=args.backtest_splits)
+    rolling_plan = describe_expanding_window_splits(master, rolling_folds)
+    save_dataframe(rolling_plan, directories["tables"] / "rolling_origin_split_plan.csv")
 
     X_train = select_model_features(train_df)
     X_val = select_model_features(val_df)
@@ -1276,6 +1439,7 @@ def main() -> None:
     build_markdown_summary(
         output_path=directories["summaries"] / "modeling_summary.md",
         split_summary=split_summary,
+        rolling_plan=rolling_plan,
         regression_metrics=regression_test_metrics,
         classification_metrics=classification_test_metrics,
         classification_threshold=classification_threshold,

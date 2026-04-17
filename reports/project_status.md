@@ -6,8 +6,8 @@
 - Proposal reviewed to confirm the target task and data-join strategy
 - Exploratory data analysis implemented in `src/eda.py`
 - End-to-end modeling pipeline implemented in `src/modeling.py`
-- Artifact-based evaluation pipeline implemented in `src/evaluate_artifacts.py`
-- Appendix analysis implemented in `src/appendix_analysis.py`
+- Artifact-based evaluation pipeline implemented in `src/evaluate_artifacts.py`, including prediction intervals and luxury-tail calibration
+- Appendix analysis implemented in `src/appendix_analysis.py` with rolling-origin backtests and formal ablations
 - Reproducibility tooling implemented with `src/validate_data.py`, `data/dataset_manifest.json`, and `requirements-lock.txt`
 - Tracked sample data and schema snapshots added under `data/sample/`, `data/sample_manifest.json`, and `data/schemas/`
 - EDA summaries, tables, and plots generated locally under `outputs/eda/`
@@ -42,8 +42,10 @@ Evaluation notes:
 
 - The hardest regression segment is the highest-value transaction band.
 - Classification remains strong overall, but performance varies by year and property type.
+- The reporting layer now supports expanding-window backtests so the final write-up is not anchored to one temporal split.
+- Regression evaluation now supports uncertainty-aware outputs for the luxury tail.
 - The current results support the proposal hypothesis that non-linear models fit this problem better than linear baselines.
 
 ## Next Engineering Step
 
-Extend the tracked pipeline with final report assets, presentation material, and any final feature-engineering refinements needed before submission.
+Run the strengthened reporting pipeline on the full raw snapshot and replace any remaining single-split claims in the final submission with rolling-fold and interval-aware evidence.
