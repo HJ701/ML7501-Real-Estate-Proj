@@ -5,10 +5,12 @@
 - Project brief reviewed and translated into a rubric-aligned plan
 - Proposal reviewed to confirm the target task and data-join strategy
 - Exploratory data analysis implemented in `src/eda.py`
-- End-to-end modeling pipeline implemented in `src/modeling.py`
+- End-to-end modeling pipeline implemented in `src/modeling.py`, including validation-vs-test comparison tables and comparative diagnostics
 - Artifact-based evaluation pipeline implemented in `src/evaluate_artifacts.py`, including prediction intervals and luxury-tail calibration
 - Appendix analysis implemented in `src/appendix_analysis.py` with rolling-origin backtests and formal ablations
+- Shared preprocessing utilities centralized in `src/transformers.py`
 - Reproducibility tooling implemented with `src/validate_data.py`, `data/dataset_manifest.json`, and `requirements-lock.txt`
+- Manifest-driven dataset download helper added via `data/download_data.py`
 - Tracked sample data and schema snapshots added under `data/sample/`, `data/sample_manifest.json`, and `data/schemas/`
 - EDA summaries, tables, and plots generated locally under `outputs/eda/`
 
@@ -18,7 +20,8 @@
 2. The target is strongly right-skewed and contains large outliers, so later modeling should compare raw and log-target variants.
 3. Rental enrichment should be built mainly on `area_id`, `area_name_en`, and time windows, not raw project-name joins alone.
 4. Hotel statistics are suitable only as annual macro context.
-5. `meter_sale_price` is a strong leakage risk and should be excluded from predictive modeling.
+5. The validation-period transaction-price distribution differs from the train and test windows, so temporal shift is a data characteristic visible already in EDA.
+6. `meter_sale_price` is a strong leakage risk and should be excluded from predictive modeling.
 
 ## Best Local Experiment Results So Far
 
@@ -42,6 +45,8 @@ Evaluation notes:
 
 - The hardest regression segment is the highest-value transaction band.
 - Classification remains strong overall, but performance varies by year and property type.
+- Validation-vs-test comparison tables now make the temporal validation anomaly visible instead of burying it in separate artifact files.
+- Classification reporting now includes balanced class weighting for the main non-dummy classifiers, plus a precision-recall comparison and threshold sweep for the strongest probabilistic models.
 - The reporting layer now supports expanding-window backtests so the final write-up is not anchored to one temporal split.
 - Regression evaluation now supports uncertainty-aware outputs for the luxury tail.
 - The current results support the proposal hypothesis that non-linear models fit this problem better than linear baselines.

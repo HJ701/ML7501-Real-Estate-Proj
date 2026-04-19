@@ -130,6 +130,19 @@ def dataset_overview(name: str, df: pd.DataFrame, date_columns: tuple[str, ...])
     }
 
 
+def temporal_split(
+    df: pd.DataFrame,
+    train_frac: float,
+    val_frac: float,
+    date_col: str = "instance_date",
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    ordered = df.sort_values(date_col).reset_index(drop=True)
+    n_rows = len(ordered)
+    train_end = int(n_rows * train_frac)
+    val_end = int(n_rows * (train_frac + val_frac))
+    return ordered.iloc[:train_end].copy(), ordered.iloc[train_end:val_end].copy(), ordered.iloc[val_end:].copy()
+
+
 def iqr_outlier_summary(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for column in columns:
@@ -220,6 +233,57 @@ def plot_distribution(df: pd.DataFrame, column: str, dataset_name: str, plot_dir
         axes[1].set_axis_off()
 
     save_plot(fig, plot_dir / f"{dataset_name}_{slugify(column)}_distribution.png")
+
+
+def split_target_distribution_summary(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    value_col: str,
+) -> pd.DataFrame:
+    rows = []
+    for split_name, split_df in [("train", train_df), ("validation", val_df), ("test", test_df)]:
+        series = pd.to_numeric(split_df[value_col], errors="coerce").dropna()
+        if series.empty:
+            continue
+        rows.append(
+            {
+                "split": split_name,
+                "rows": int(len(series)),
+                "mean_value": float(series.mean()),
+                "median_value": float(series.median()),
+                "p90_value": float(series.quantile(0.90)),
+                "p99_value": float(series.quantile(0.99)),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def plot_split_target_distribution(
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    value_col: str,
+    plot_dir: Path,
+) -> None:
+    rows = []
+    for split_name, split_df in [("Train", train_df), ("Validation", val_df), ("Test", test_df)]:
+        working = pd.to_numeric(split_df[value_col], errors="coerce").dropna()
+        working = working[working > 0]
+        if working.empty:
+            continue
+        rows.append(pd.DataFrame({"split": split_name, "log_value": np.log1p(working)}))
+
+    if not rows:
+        return
+
+    plot_df = pd.concat(rows, axis=0, ignore_index=True)
+    fig, ax = plt.subplots(figsize=(11, 6))
+    sns.kdeplot(data=plot_df, x="log_value", hue="split", fill=True, common_norm=False, alpha=0.25, ax=ax)
+    ax.set_title("Transaction price distribution by temporal split")
+    ax.set_xlabel("log1p(actual_worth)")
+    ax.set_ylabel("Density")
+    save_plot(fig, plot_dir / "transactions_actual_worth_by_split_distribution.png")
 
 
 def plot_bivariate_relationship(
@@ -472,6 +536,7 @@ def write_summary_report(
     rent_outliers: pd.DataFrame,
     transaction_corr: pd.DataFrame,
     overlap_df: pd.DataFrame,
+    split_distribution_df: pd.DataFrame,
 ) -> None:
     transaction_missing = transaction_profile.loc[transaction_profile["missing_pct"] > 20, ["column", "missing_pct"]].head(8)
     rent_missing = rent_profile.loc[rent_profile["missing_pct"] > 10, ["column", "missing_pct"]].head(8)
@@ -485,6 +550,7 @@ def write_summary_report(
     rent_outlier_lines = rent_outliers.to_markdown(index=False) if not rent_outliers.empty else "None"
     corr_lines = transaction_corr.to_markdown(index=False) if not transaction_corr.empty else "None"
     overlap_lines = overlap_df.to_markdown(index=False) if not overlap_df.empty else "None"
+    split_lines = split_distribution_df.to_markdown(index=False) if not split_distribution_df.empty else "None"
 
     report_lines = [
         "# Exploratory Data Analysis Summary",
@@ -499,8 +565,12 @@ def write_summary_report(
         "2. The rent dataset is useful for area-time enrichment, but project-level fields are highly sparse, so future joins should rely primarily on `area_id`, `area_name_en`, and carefully engineered time windows rather than raw project names alone.",
         "3. The hotel dataset is annual UAE-level macro context, not neighborhood-level context. It should be merged only at the year level and treated as coarse exogenous signal rather than a direct geographic join source.",
         "4. The new bivariate EDA plot confirms that `procedure_area` has a strong positive relationship with `actual_worth`, but the association is clearly heteroscedastic and non-linear in raw scale, which justifies the later use of log-aware diagnostics and flexible non-linear models.",
-        "5. Several columns are leakage risks for the later regression task. In particular, `meter_sale_price` is almost perfectly correlated with `actual_worth`, and `rent_value` is sparsely populated inside the transactions table but also mechanically related to price for the limited populated rows.",
-        "6. The datasets contain substantial skewness and outliers, so the later pipeline should compare raw versus log-transformed targets and use robust error diagnostics.",
+        "5. The temporal split comparison shows that the validation period has a noticeably different transaction-price distribution from the train and test windows. That shift should be treated as an EDA-discovered characteristic of the data rather than only a post-hoc model explanation.",
+        "6. Several columns are leakage risks for the later regression task. In particular, `meter_sale_price` is almost perfectly correlated with `actual_worth`, and `rent_value` is sparsely populated inside the transactions table but also mechanically related to price for the limited populated rows.",
+        "7. The datasets contain substantial skewness and outliers, so the later pipeline should compare raw versus log-transformed targets and use robust error diagnostics.",
+        "",
+        "## Transactions: Temporal Split Distribution Snapshot",
+        split_lines,
         "",
         "## Transactions: High Missingness",
         transaction_missing_lines,
@@ -547,6 +617,8 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_OUTPUT_DIR,
         help="Directory where EDA outputs will be written.",
     )
+    parser.add_argument("--train-frac", type=float, default=0.70, help="Fraction of rows used for the training split.")
+    parser.add_argument("--val-frac", type=float, default=0.15, help="Fraction of rows used for the validation split.")
     return parser.parse_args()
 
 
@@ -585,18 +657,38 @@ def run() -> None:
     rent_outliers = iqr_outlier_summary(rents, ["annual_amount", "actual_area", "contract_amount"])
     transaction_corr = top_correlations(transactions, "actual_worth")
     overlap_df = join_key_overlap(transactions, rents)
+    train_transactions, val_transactions, test_transactions = temporal_split(
+        transactions,
+        train_frac=args.train_frac,
+        val_frac=args.val_frac,
+        date_col="instance_date",
+    )
+    split_distribution_df = split_target_distribution_summary(
+        train_transactions,
+        val_transactions,
+        test_transactions,
+        value_col="actual_worth",
+    )
 
     save_dataframe(pd.DataFrame(overview_rows), table_dir / "dataset_overview.csv")
     save_dataframe(transaction_outliers, table_dir / "transactions_outlier_summary.csv")
     save_dataframe(rent_outliers, table_dir / "rent_contracts_outlier_summary.csv")
     save_dataframe(transaction_corr, table_dir / "transactions_top_correlations.csv")
     save_dataframe(overlap_df, table_dir / "transactions_rent_join_overlap.csv")
+    save_dataframe(split_distribution_df, table_dir / "transactions_actual_worth_by_split_summary.csv")
 
     plot_distribution(transactions, "actual_worth", "transactions", plot_dir)
     plot_distribution(transactions, "procedure_area", "transactions", plot_dir)
     plot_distribution(rents, "annual_amount", "rent_contracts", plot_dir)
     plot_distribution(rents, "actual_area", "rent_contracts", plot_dir)
     plot_bivariate_relationship(transactions, "procedure_area", "actual_worth", "transactions", plot_dir)
+    plot_split_target_distribution(
+        train_transactions,
+        val_transactions,
+        test_transactions,
+        value_col="actual_worth",
+        plot_dir=plot_dir,
+    )
 
     plot_top_categories(transactions, "procedure_name_en", "transactions", plot_dir)
     plot_top_categories(transactions, "property_type_en", "transactions", plot_dir)
@@ -629,6 +721,7 @@ def run() -> None:
         rent_outliers=rent_outliers,
         transaction_corr=transaction_corr,
         overlap_df=overlap_df,
+        split_distribution_df=split_distribution_df,
     )
 
 

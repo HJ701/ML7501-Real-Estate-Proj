@@ -18,9 +18,11 @@ The repository now includes the full source pipeline:
 
 - [src/appendix_analysis.py](src/appendix_analysis.py): rolling-origin backtests, formal feature ablation, significance checks, and raw-vs-log robustness tables
 - [src/eda.py](src/eda.py): exploratory data analysis
-- [src/modeling.py](src/modeling.py): master-table construction, preprocessing, model training, tuning, artifact export
+- [src/modeling.py](src/modeling.py): master-table construction, preprocessing, model training, tuning, artifact export, validation-vs-test comparison tables, and comparative diagnostics
 - [src/evaluate_artifacts.py](src/evaluate_artifacts.py): rigorous post-training evaluation from saved artifacts, including regression intervals and luxury-tail calibration
+- [src/transformers.py](src/transformers.py): shared preprocessing transformers used consistently across training and evaluation code
 - [src/validate_data.py](src/validate_data.py): raw-data manifest and schema validation
+- [data/download_data.py](data/download_data.py): manifest-driven raw-data download helper
 - [reports/project_status.md](reports/project_status.md): concise project summary
 - [data/README.md](data/README.md): local raw-data notes
 - [reports/appendix_modeling_detail.md](reports/appendix_modeling_detail.md): summary of the strengthened evaluation/reporting protocol
@@ -47,12 +49,17 @@ The EDA established the modeling direction and surfaced the main data risks:
 - rental/project fields are useful but sparse
 - `meter_sale_price` is a leakage risk and should not be used directly for prediction
 - `area_id` and time-based aggregation are more reliable join anchors than raw project names
+- the validation-period transaction-price distribution differs visibly from the train and test periods, so temporal shift should be treated as a data characteristic rather than only a modeling artifact
 
 ### Target Distribution
 
 The sale-price target has a heavy right tail, which supports testing log-transformed target variants and robust error analysis later in the pipeline.
 
 ![Actual worth distribution](docs/figures/transactions_actual_worth_distribution.png)
+
+### Temporal Split Shift
+
+The EDA pipeline now also compares transaction-price distributions across the train/validation/test windows used later in modeling, so distribution shift is visible before any model is trained.
 
 ### Join Feasibility
 
@@ -111,7 +118,9 @@ For final-report polish, the repo includes a tracked appendix note at [reports/a
 - paired significance-style checks on ablation gains across temporal folds
 - an explicit raw-target versus `log1p`-target comparison across rolling folds
 
-The key reporting upgrade is that temporal robustness, ablation evidence, and target-treatment robustness are now generated from repeated forward-looking folds instead of one validation/test narrative.
+The key reporting upgrade is that temporal robustness, validation-vs-test comparisons, ablation evidence, and target-treatment robustness are now generated from reusable source code instead of one validation/test narrative plus manual reporting.
+
+For classification, imbalance handling is now explicit in both training and reporting: the non-dummy linear and tree classifiers use balanced class weighting where supported, and the generated artifacts include a split-level label-balance table, a precision-recall comparison, and a threshold sweep.
 
 ## Repository Layout
 
@@ -124,6 +133,7 @@ ML7501-Real-Estate-Proj/
 ├── data/
 │   ├── README.md
 │   ├── dataset_manifest.json
+│   ├── download_data.py
 │   ├── sample_manifest.json
 │   ├── sample/               # tracked public sample for smoke runs
 │   ├── schemas/              # tracked schema snapshots
@@ -142,6 +152,7 @@ ML7501-Real-Estate-Proj/
 │   ├── eda.py
 │   ├── evaluate_artifacts.py
 │   ├── modeling.py
+│   ├── transformers.py
 │   └── validate_data.py
 └── outputs/                  # local generated artifacts, not versioned
 ```
@@ -178,6 +189,12 @@ For the tracked sample instead of the full raw snapshot:
 
 ```bash
 python3 -m src.validate_data --data-dir data/sample
+```
+
+Optional raw-data download helper:
+
+```bash
+python3 data/download_data.py --output-dir data/raw
 ```
 
 ## Run The Current EDA
@@ -220,7 +237,7 @@ Important options:
 - `--val-frac 0.15`
 - `--backtest-splits 5`
 - `--classification-quantile 0.75`
-- `--tune-iterations 8`
+- `--tune-iterations 40`
 - `--cv-splits 4`
 - `--n-jobs 1`
 
@@ -255,7 +272,9 @@ python3 -m src.evaluate_artifacts \
 After running the full pipeline, the main local outputs are:
 
 - `outputs/modeling/<run_name>/tables/`
+  Key additions: validation-vs-test comparison tables and threshold-sweep tables
 - `outputs/modeling/<run_name>/plots/`
+  Key additions: regression actual-vs-predicted comparison grid and classification precision-recall comparison
 - `outputs/modeling/<run_name>/models/`
 - `outputs/modeling/<run_name>/summaries/`
 - `outputs/evaluation/<run_name>/tables/`
@@ -269,4 +288,5 @@ After running the full pipeline, the main local outputs are:
 - Raw data are intentionally excluded from git.
 - The repo includes a tracked public sample and tracked schema snapshots to reduce reproduction friction for instructors.
 - Large generated experiment artifacts remain local under `outputs/`.
+- The default tuning scope is now aligned with the report language: tuned model families use 40 random-search candidates unless a smaller run is requested explicitly.
 - The repository is structured so the full end-to-end source code is tracked, while heavyweight local outputs stay untracked.

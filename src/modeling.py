@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from joblib import dump
-from sklearn.base import BaseEstimator, TransformerMixin, clone
+from sklearn.base import clone
 from sklearn.compose import ColumnTransformer
 from sklearn.dummy import DummyClassifier, DummyRegressor
 from sklearn.ensemble import (
@@ -32,10 +32,12 @@ from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     accuracy_score,
+    average_precision_score,
     f1_score,
     mean_absolute_error,
     mean_squared_error,
     precision_score,
+    precision_recall_curve,
     r2_score,
     recall_score,
     roc_auc_score,
@@ -45,7 +47,8 @@ from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.svm import LinearSVC, LinearSVR
-from sklearn.utils.validation import check_is_fitted
+
+from src.transformers import ObservedColumnSelector, QuantileClipper
 
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="seaborn")
@@ -162,33 +165,6 @@ class ModelSpec:
     name: str
     estimator: object
     param_distributions: dict[str, list[object]]
-
-
-class QuantileClipper(BaseEstimator, TransformerMixin):
-    """Clip numeric tails using training-set quantiles to stabilize models."""
-
-    def __init__(self, lower: float = 0.01, upper: float = 0.99):
-        self.lower = lower
-        self.upper = upper
-
-    def fit(self, X: np.ndarray, y: np.ndarray | None = None) -> "QuantileClipper":
-        values = np.asarray(X, dtype=float)
-        self.lower_bounds_ = np.nanquantile(values, self.lower, axis=0)
-        self.upper_bounds_ = np.nanquantile(values, self.upper, axis=0)
-        return self
-
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        check_is_fitted(self, ["lower_bounds_", "upper_bounds_"])
-        values = np.asarray(X, dtype=float)
-        return np.clip(values, self.lower_bounds_, self.upper_bounds_)
-
-    def get_feature_names_out(self, input_features: list[str] | np.ndarray | None = None) -> np.ndarray:
-        if input_features is None:
-            return np.array([], dtype=object)
-        return np.asarray(input_features, dtype=object)
-
-
-QuantileClipper.__module__ = "src.modeling"
 
 
 def slugify(text: str) -> str:
@@ -576,13 +552,18 @@ def select_model_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_preprocessor(X: pd.DataFrame) -> ColumnTransformer:
-    numeric_columns = X.select_dtypes(include=[np.number, "bool"]).columns.tolist()
-    categorical_columns = [column for column in X.columns if column not in numeric_columns]
+    numeric_columns = [
+        column for column in X.select_dtypes(include=[np.number, "bool"]).columns.tolist() if X[column].notna().any()
+    ]
+    categorical_columns = [
+        column for column in X.columns if column not in numeric_columns and X[column].notna().any()
+    ]
 
     transformers: list[tuple[str, Pipeline, list[str]]] = []
     if numeric_columns:
         numeric_pipeline = Pipeline(
             steps=[
+                ("selector", ObservedColumnSelector()),
                 ("imputer", SimpleImputer(strategy="median")),
                 ("clipper", QuantileClipper(lower=0.01, upper=0.99)),
                 ("scaler", StandardScaler()),
@@ -593,6 +574,7 @@ def build_preprocessor(X: pd.DataFrame) -> ColumnTransformer:
     if categorical_columns:
         categorical_pipeline = Pipeline(
             steps=[
+                ("selector", ObservedColumnSelector()),
                 ("imputer", SimpleImputer(strategy="constant", fill_value="Missing")),
                 (
                     "encoder",
@@ -816,6 +798,7 @@ def get_classification_model_specs(use_gpu: bool, random_state: int, n_jobs: int
                 learning_rate=0.05,
                 max_iter=350,
                 max_depth=8,
+                class_weight="balanced",
                 random_state=random_state,
             ),
             param_distributions={
@@ -891,6 +874,86 @@ def save_json(payload: dict[str, object], path: Path) -> None:
     path.write_text(json.dumps(serializable, indent=2))
 
 
+def display_model_name(model_name: str) -> str:
+    mapping = {
+        "dummy_regressor": "Dummy",
+        "ridge_regression": "Ridge",
+        "svm_regression": "Linear SVM",
+        "random_forest": "Random Forest",
+        "hist_gradient_boosting": "HistGradientBoosting",
+        "dummy_classifier": "Dummy",
+        "logistic_regression": "Logistic Regression",
+        "svm_classifier": "Linear SVM",
+        "xgboost": "XGBoost",
+    }
+    return mapping.get(model_name, model_name.replace("_", " ").title())
+
+
+def normalize_scores_for_thresholds(scores: np.ndarray | None) -> np.ndarray | None:
+    if scores is None:
+        return None
+    values = np.asarray(scores, dtype=float)
+    if np.nanmin(values) < 0 or np.nanmax(values) > 1:
+        return 1 / (1 + np.exp(-values))
+    return values
+
+
+def merge_validation_and_test_metrics(
+    validation_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    task: str,
+) -> pd.DataFrame:
+    if validation_df.empty or test_df.empty:
+        return pd.DataFrame()
+
+    merged = validation_df.merge(
+        test_df,
+        on="model_name",
+        suffixes=("_validation", "_test"),
+    )
+
+    if task == "regression":
+        merged["rmse_gap_test_minus_validation"] = merged["rmse_test"] - merged["rmse_validation"]
+        merged["r2_gap_test_minus_validation"] = merged["r2_test"] - merged["r2_validation"]
+        return merged.sort_values("rmse_test", ascending=True).reset_index(drop=True)
+
+    merged["accuracy_gap_test_minus_validation"] = merged["accuracy_test"] - merged["accuracy_validation"]
+    merged["roc_auc_gap_test_minus_validation"] = merged["roc_auc_test"] - merged["roc_auc_validation"]
+    return merged.sort_values("roc_auc_test", ascending=False).reset_index(drop=True)
+
+
+def parameter_space_size(param_distributions: dict[str, list[object]]) -> int:
+    if not param_distributions:
+        return 0
+    size = 1
+    for values in param_distributions.values():
+        size *= max(1, len(values))
+    return size
+
+
+def build_classification_balance_table(
+    y_train: pd.Series,
+    y_val: pd.Series,
+    y_test: pd.Series,
+) -> pd.DataFrame:
+    rows = []
+    for split_name, labels in [
+        ("train", y_train),
+        ("validation", y_val),
+        ("test", y_test),
+    ]:
+        rows.append(
+            {
+                "split": split_name,
+                "rows": int(len(labels)),
+                "positive_count": int(labels.sum()),
+                "negative_count": int(len(labels) - labels.sum()),
+                "positive_rate": float(labels.mean()),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def plot_metric_bars(
     df: pd.DataFrame,
     metric: str,
@@ -940,6 +1003,47 @@ def plot_regression_diagnostics(
     plt.close(fig)
 
 
+def plot_regression_comparison_grid(
+    diagnostics_payload: dict[str, dict[str, np.ndarray | pd.Series | None]],
+    output_path: Path,
+) -> None:
+    selected_models = [
+        model_name
+        for model_name in ["dummy_regressor", "ridge_regression", "random_forest", "hist_gradient_boosting"]
+        if model_name in diagnostics_payload
+    ]
+    if not selected_models:
+        return
+
+    n_cols = 2
+    n_rows = int(np.ceil(len(selected_models) / n_cols))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(12, 5.5 * n_rows))
+    axes = np.atleast_1d(axes).flatten()
+
+    for ax, model_name in zip(axes, selected_models):
+        payload = diagnostics_payload[model_name]
+        y_true = np.asarray(payload["y_true"], dtype=float)
+        predictions = np.asarray(payload["predictions"], dtype=float)
+        ax.scatter(y_true, predictions, alpha=0.35, s=18, color="#1f6f8b")
+        diagonal_min = min(y_true.min(), predictions.min())
+        diagonal_max = max(y_true.max(), predictions.max())
+        ax.plot([diagonal_min, diagonal_max], [diagonal_min, diagonal_max], linestyle="--", color="#bc4749")
+        metrics = evaluate_regression(pd.Series(y_true), predictions)
+        ax.set_title(
+            f"{display_model_name(model_name)}\nRMSE {metrics['rmse']:,.0f} | R² {metrics['r2']:.3f}"
+        )
+        ax.set_xlabel("Actual")
+        ax.set_ylabel("Predicted")
+
+    for ax in axes[len(selected_models) :]:
+        ax.set_axis_off()
+
+    fig.suptitle("Regression comparison: actual vs predicted by model", y=0.995, fontsize=16)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_classification_diagnostics(
     y_true: pd.Series,
     predictions: np.ndarray,
@@ -968,6 +1072,87 @@ def plot_classification_diagnostics(
     fig.tight_layout()
     fig.savefig(output_prefix.with_name(output_prefix.name + "_roc_curve.png"), dpi=220, bbox_inches="tight")
     plt.close(fig)
+
+
+def plot_precision_recall_comparison(
+    diagnostics_payload: dict[str, dict[str, np.ndarray | pd.Series | None]],
+    output_path: Path,
+) -> None:
+    selected_models = [
+        model_name
+        for model_name in ["hist_gradient_boosting", "logistic_regression"]
+        if model_name in diagnostics_payload
+    ]
+    if not selected_models:
+        return
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    colors = {
+        "hist_gradient_boosting": "#1f6f8b",
+        "logistic_regression": "#bc4749",
+    }
+    any_curve = False
+    for model_name in selected_models:
+        payload = diagnostics_payload[model_name]
+        y_true = np.asarray(payload["y_true"], dtype=int)
+        scores = normalize_scores_for_thresholds(payload["scores"])
+        if scores is None:
+            continue
+        precision, recall, _ = precision_recall_curve(y_true, scores)
+        ap = average_precision_score(y_true, scores)
+        ax.plot(
+            recall,
+            precision,
+            linewidth=2,
+            label=f"{display_model_name(model_name)} (AP = {ap:.3f})",
+            color=colors.get(model_name, None),
+        )
+        any_curve = True
+
+    if not any_curve:
+        plt.close(fig)
+        return
+
+    ax.set_title("Classification comparison: precision-recall curves")
+    ax.set_xlabel("Recall")
+    ax.set_ylabel("Precision")
+    ax.legend(loc="lower left")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def build_threshold_sweep_table(
+    diagnostics_payload: dict[str, dict[str, np.ndarray | pd.Series | None]],
+    thresholds: np.ndarray | None = None,
+) -> pd.DataFrame:
+    if thresholds is None:
+        thresholds = np.arange(0.10, 0.95, 0.05)
+
+    rows: list[dict[str, object]] = []
+    for model_name in ["hist_gradient_boosting", "logistic_regression"]:
+        if model_name not in diagnostics_payload:
+            continue
+        payload = diagnostics_payload[model_name]
+        y_true = np.asarray(payload["y_true"], dtype=int)
+        scores = normalize_scores_for_thresholds(payload["scores"])
+        if scores is None:
+            continue
+
+        for threshold in thresholds:
+            predictions = (scores >= threshold).astype(int)
+            rows.append(
+                {
+                    "model_name": model_name,
+                    "threshold": float(threshold),
+                    "precision": float(precision_score(y_true, predictions, zero_division=0)),
+                    "recall": float(recall_score(y_true, predictions, zero_division=0)),
+                    "f1": float(f1_score(y_true, predictions, zero_division=0)),
+                    "predicted_positive_rate": float(predictions.mean()),
+                }
+            )
+
+    return pd.DataFrame(rows)
 
 
 def compute_permutation_importance_table(
@@ -1056,10 +1241,13 @@ def run_hyperparameter_tuning(
         if spec.name not in preferred_names or not spec.param_distributions:
             continue
 
+        search_space = parameter_space_size(spec.param_distributions)
+        n_iter = min(tune_iterations, search_space) if search_space > 0 else tune_iterations
+
         search = RandomizedSearchCV(
             estimator=build_pipeline(task=task, preprocessor=preprocessor, estimator=clone(spec.estimator)),
             param_distributions=prefix_params(task, spec.param_distributions),
-            n_iter=min(tune_iterations, max(1, len(spec.param_distributions) * 3)),
+            n_iter=n_iter,
             scoring=primary_metric(task),
             cv=TimeSeriesSplit(n_splits=cv_splits),
             refit=True,
@@ -1073,6 +1261,9 @@ def run_hyperparameter_tuning(
             {
                 "model_name": spec.name,
                 "best_cv_score": float(search.best_score_),
+                "n_iter_requested": int(tune_iterations),
+                "n_iter_run": int(n_iter),
+                "search_space_size": int(search_space),
                 "best_params": json.dumps(search.best_params_),
             }
         )
@@ -1132,7 +1323,9 @@ def build_markdown_summary(
     output_path: Path,
     split_summary: dict[str, object],
     rolling_plan: pd.DataFrame,
+    regression_validation: pd.DataFrame | None,
     regression_metrics: pd.DataFrame | None,
+    classification_validation: pd.DataFrame | None,
     classification_metrics: pd.DataFrame | None,
     classification_threshold: float | None,
 ) -> None:
@@ -1168,6 +1361,18 @@ def build_markdown_summary(
             ]
         )
 
+    if regression_validation is not None and regression_metrics is not None and not regression_validation.empty and not regression_metrics.empty:
+        best_val = regression_validation.sort_values("rmse", ascending=True).iloc[0]
+        best_test = regression_metrics.sort_values("rmse", ascending=True).iloc[0]
+        lines.extend(
+            [
+                "",
+                "## Regression Validation vs Test",
+                f"- Best validation RMSE: {best_val['rmse']:,.2f} (`{best_val['model_name']}`)",
+                f"- Best test RMSE: {best_test['rmse']:,.2f} (`{best_test['model_name']}`)",
+            ]
+        )
+
     if regression_metrics is not None and not regression_metrics.empty:
         best = regression_metrics.sort_values("rmse", ascending=True).iloc[0]
         lines.extend(
@@ -1178,6 +1383,18 @@ def build_markdown_summary(
                 f"- RMSE: {best['rmse']:,.2f}",
                 f"- MAE: {best['mae']:,.2f}",
                 f"- R2: {best['r2']:.4f}",
+            ]
+        )
+
+    if classification_validation is not None and classification_metrics is not None and not classification_validation.empty and not classification_metrics.empty:
+        best_val = classification_validation.sort_values("roc_auc", ascending=False).iloc[0]
+        best_test = classification_metrics.sort_values("roc_auc", ascending=False).iloc[0]
+        lines.extend(
+            [
+                "",
+                "## Classification Validation vs Test",
+                f"- Best validation ROC AUC: {best_val['roc_auc']:.4f} (`{best_val['model_name']}`)",
+                f"- Best test ROC AUC: {best_test['roc_auc']:.4f} (`{best_test['model_name']}`)",
             ]
         )
 
@@ -1228,7 +1445,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tune-iterations",
         type=int,
-        default=8,
+        default=40,
         help="Number of random-search iterations per tuned model.",
     )
     parser.add_argument("--cv-splits", type=int, default=4, help="Number of time-series CV splits for tuning.")
@@ -1274,7 +1491,9 @@ def main() -> None:
 
     preprocessor = build_preprocessor(X_train)
 
+    regression_validation: pd.DataFrame | None = None
     regression_test_metrics: pd.DataFrame | None = None
+    classification_validation: pd.DataFrame | None = None
     classification_test_metrics: pd.DataFrame | None = None
     classification_threshold: float | None = None
 
@@ -1324,6 +1543,15 @@ def main() -> None:
             model_dir=directories["models"],
         )
         save_dataframe(regression_test_metrics, directories["tables"] / "regression_test_metrics.csv")
+        regression_comparison = merge_validation_and_test_metrics(
+            validation_df=regression_validation,
+            test_df=regression_test_metrics,
+            task="regression",
+        )
+        save_dataframe(
+            regression_comparison,
+            directories["tables"] / "regression_model_comparison_validation_vs_test.csv",
+        )
         plot_metric_bars(
             regression_test_metrics,
             metric="rmse",
@@ -1338,6 +1566,10 @@ def main() -> None:
             y_true=best_regression_payload["y_true"],
             predictions=best_regression_payload["predictions"],
             output_prefix=directories["plots"] / f"regression_best_{best_regression_name}",
+        )
+        plot_regression_comparison_grid(
+            diagnostics_payload=regression_payload,
+            output_path=directories["plots"] / "regression_model_comparison_actual_vs_predicted.png",
         )
         regression_importance = compute_permutation_importance_table(
             model=best_regression_model,
@@ -1378,6 +1610,10 @@ def main() -> None:
             y_val=y_val_clf,
         )
         save_dataframe(classification_validation, directories["tables"] / "classification_validation_metrics.csv")
+        save_dataframe(
+            build_classification_balance_table(y_train_clf, y_val_clf, y_test_clf),
+            directories["tables"] / "classification_label_balance_by_split.csv",
+        )
 
         classification_tuned, classification_tuning_table = run_hyperparameter_tuning(
             task="classification",
@@ -1403,6 +1639,15 @@ def main() -> None:
             model_dir=directories["models"],
         )
         save_dataframe(classification_test_metrics, directories["tables"] / "classification_test_metrics.csv")
+        classification_comparison = merge_validation_and_test_metrics(
+            validation_df=classification_validation,
+            test_df=classification_test_metrics,
+            task="classification",
+        )
+        save_dataframe(
+            classification_comparison,
+            directories["tables"] / "classification_model_comparison_validation_vs_test.csv",
+        )
         plot_metric_bars(
             classification_test_metrics,
             metric="roc_auc",
@@ -1418,6 +1663,14 @@ def main() -> None:
             predictions=best_classification_payload["predictions"],
             scores=best_classification_payload["scores"],
             output_prefix=directories["plots"] / f"classification_best_{best_classification_name}",
+        )
+        plot_precision_recall_comparison(
+            diagnostics_payload=classification_payload,
+            output_path=directories["plots"] / "classification_precision_recall_comparison.png",
+        )
+        save_dataframe(
+            build_threshold_sweep_table(classification_payload),
+            directories["tables"] / "classification_threshold_sweep.csv",
         )
         classification_importance = compute_permutation_importance_table(
             model=best_classification_model,
@@ -1440,7 +1693,9 @@ def main() -> None:
         output_path=directories["summaries"] / "modeling_summary.md",
         split_summary=split_summary,
         rolling_plan=rolling_plan,
+        regression_validation=regression_validation,
         regression_metrics=regression_test_metrics,
+        classification_validation=classification_validation,
         classification_metrics=classification_test_metrics,
         classification_threshold=classification_threshold,
     )

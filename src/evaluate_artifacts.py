@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from joblib import load
-from sklearn.base import BaseEstimator, TransformerMixin, clone
+from sklearn.base import clone
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import (
@@ -33,9 +33,9 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from sklearn.pipeline import Pipeline
-from sklearn.utils.validation import check_is_fitted
 
 from src.modeling import build_preprocessor
+from src.transformers import QuantileClipper
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_ARTIFACT_DIR = BASE_DIR / "outputs" / "modeling" / "gpu_run"
@@ -67,23 +67,6 @@ DATE_COLUMNS_TO_DROP = {
     "instance_date",
     "transaction_month",
 }
-
-
-class QuantileClipper(BaseEstimator, TransformerMixin):
-    def __init__(self, lower: float = 0.01, upper: float = 0.99):
-        self.lower = lower
-        self.upper = upper
-
-    def fit(self, X: np.ndarray, y: np.ndarray | None = None) -> "QuantileClipper":
-        values = np.asarray(X, dtype=float)
-        self.lower_bounds_ = np.nanquantile(values, self.lower, axis=0)
-        self.upper_bounds_ = np.nanquantile(values, self.upper, axis=0)
-        return self
-
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        check_is_fitted(self, ["lower_bounds_", "upper_bounds_"])
-        values = np.asarray(X, dtype=float)
-        return np.clip(values, self.lower_bounds_, self.upper_bounds_)
 
 
 __main__.QuantileClipper = QuantileClipper

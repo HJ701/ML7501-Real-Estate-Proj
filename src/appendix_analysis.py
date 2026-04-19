@@ -501,7 +501,7 @@ def build_appendix_markdown(
             "",
             "## Regression Feature Ablation And Robustness",
             "",
-            "Ablation holds the best saved regression estimator family fixed and changes only the available feature families across the same rolling folds.",
+            "Ablation holds the best saved regression estimator family fixed and changes only the available feature families across the same rolling folds. These rows are constrained diagnostic variants, not replacements for the main full-pipeline leaderboard.",
             "",
             ablation_df.to_markdown(index=False, floatfmt=".4f"),
             "",
