@@ -222,6 +222,54 @@ def plot_distribution(df: pd.DataFrame, column: str, dataset_name: str, plot_dir
     save_plot(fig, plot_dir / f"{dataset_name}_{slugify(column)}_distribution.png")
 
 
+def plot_bivariate_relationship(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    dataset_name: str,
+    plot_dir: Path,
+) -> None:
+    if x_col not in df.columns or y_col not in df.columns:
+        return
+
+    working = df[[x_col, y_col]].copy()
+    working[x_col] = pd.to_numeric(working[x_col], errors="coerce")
+    working[y_col] = pd.to_numeric(working[y_col], errors="coerce")
+    working = working.dropna(subset=[x_col, y_col])
+    working = working[(working[x_col] > 0) & (working[y_col] > 0)]
+    if working.empty:
+        return
+
+    working = working.assign(
+        log_x=np.log10(working[x_col]),
+        log_y=np.log10(working[y_col]),
+    )
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    sns.regplot(
+        data=working.sample(n=min(len(working), 3000), random_state=42),
+        x="log_x",
+        y="log_y",
+        scatter_kws={"alpha": 0.35, "s": 18, "color": "#1f6f8b"},
+        line_kws={"color": "#bc4749", "linewidth": 2},
+        ax=ax,
+    )
+    corr = working[[x_col, y_col]].corr(numeric_only=True).iloc[0, 1]
+    ax.set_title(f"{y_col} vs {x_col} (log-log view)")
+    ax.set_xlabel(f"log10({x_col})")
+    ax.set_ylabel(f"log10({y_col})")
+    ax.text(
+        0.03,
+        0.97,
+        f"Pearson r = {corr:.3f}",
+        transform=ax.transAxes,
+        va="top",
+        ha="left",
+        bbox={"facecolor": "white", "edgecolor": "#cccccc", "alpha": 0.9},
+    )
+    save_plot(fig, plot_dir / f"{dataset_name}_{slugify(y_col)}_vs_{slugify(x_col)}_scatter.png")
+
+
 def plot_top_categories(df: pd.DataFrame, column: str, dataset_name: str, plot_dir: Path, top_n: int = 10) -> None:
     if column not in df.columns:
         return
@@ -450,8 +498,9 @@ def write_summary_report(
         "1. The transaction table is the correct master table for supervised learning because it contains the regression target `actual_worth` and broad feature coverage, but it is strongly right-skewed with large-value outliers.",
         "2. The rent dataset is useful for area-time enrichment, but project-level fields are highly sparse, so future joins should rely primarily on `area_id`, `area_name_en`, and carefully engineered time windows rather than raw project names alone.",
         "3. The hotel dataset is annual UAE-level macro context, not neighborhood-level context. It should be merged only at the year level and treated as coarse exogenous signal rather than a direct geographic join source.",
-        "4. Several columns are leakage risks for the later regression task. In particular, `meter_sale_price` is almost perfectly correlated with `actual_worth`, and `rent_value` is sparsely populated inside the transactions table but also mechanically related to price for the limited populated rows.",
-        "5. The datasets contain substantial skewness and outliers, so the later pipeline should compare raw versus log-transformed targets and use robust error diagnostics.",
+        "4. The new bivariate EDA plot confirms that `procedure_area` has a strong positive relationship with `actual_worth`, but the association is clearly heteroscedastic and non-linear in raw scale, which justifies the later use of log-aware diagnostics and flexible non-linear models.",
+        "5. Several columns are leakage risks for the later regression task. In particular, `meter_sale_price` is almost perfectly correlated with `actual_worth`, and `rent_value` is sparsely populated inside the transactions table but also mechanically related to price for the limited populated rows.",
+        "6. The datasets contain substantial skewness and outliers, so the later pipeline should compare raw versus log-transformed targets and use robust error diagnostics.",
         "",
         "## Transactions: High Missingness",
         transaction_missing_lines,
@@ -547,6 +596,7 @@ def run() -> None:
     plot_distribution(transactions, "procedure_area", "transactions", plot_dir)
     plot_distribution(rents, "annual_amount", "rent_contracts", plot_dir)
     plot_distribution(rents, "actual_area", "rent_contracts", plot_dir)
+    plot_bivariate_relationship(transactions, "procedure_area", "actual_worth", "transactions", plot_dir)
 
     plot_top_categories(transactions, "procedure_name_en", "transactions", plot_dir)
     plot_top_categories(transactions, "property_type_en", "transactions", plot_dir)

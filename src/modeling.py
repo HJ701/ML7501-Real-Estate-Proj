@@ -48,8 +48,8 @@ from sklearn.svm import LinearSVC, LinearSVR
 from sklearn.utils.validation import check_is_fitted
 
 
-warnings.filterwarnings("ignore", category=FutureWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning, module="seaborn")
+warnings.filterwarnings("ignore", category=UserWarning, module="pandas")
 
 src_package = sys.modules.setdefault("src", types.ModuleType("src"))
 setattr(src_package, "modeling", sys.modules[__name__])
